@@ -1,0 +1,9 @@
+#0600-manpage-spelling.patch
+##0115-secure_script_scons.patch
+##0105-java_ignore_nonexistent_files.patch
+#0110-remove_stale_files.patch
+#0100-parallel_build.patch
+#0120-fix-bibtex-call.patch
+##0125-printf_regression.patch
+#0130-python3.patch
+#docbook-lxml-fix-manpage-generation.patch

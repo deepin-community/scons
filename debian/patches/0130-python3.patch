@@ -1,0 +1,46 @@
+Description: Use shebang python3 
+Author: Jörg Fring-Fürst <debian@jff.email>
+Forwarded: not-needed
+Last-Update: 2019-08-06
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+Index: trunk/script/scons
+===================================================================
+--- a/src/script/scons.py
++++ b/src/script/scons.py
+@@ -1,4 +1,4 @@
+-#! /usr/bin/env python
++#! /usr/bin/env python3
+ #
+ # SCons - a Software Constructor
+ #
+Index: trunk/script/scons-configure-cache
+===================================================================
+--- a/src/script/scons-configure-cache.py
++++ b/src/script/scons-configure-cache.py
+@@ -1,4 +1,4 @@
+-#! /usr/bin/env python
++#! /usr/bin/env python3
+ #
+ # SCons - a Software Constructor
+ #
+Index: trunk/script/scons-time
+===================================================================
+--- a/src/script/scons-time.py
++++ b/src/script/scons-time.py
+@@ -1,4 +1,4 @@
+-#!/usr/bin/env python
++#!/usr/bin/env python3
+ #
+ # scons-time - run SCons timings and collect statistics
+ #
+Index: trunk/script/sconsign
+===================================================================
+--- a/src/script/sconsign.py
++++ b/src/script/sconsign.py
+@@ -1,4 +1,4 @@
+-#! /usr/bin/env python
++#! /usr/bin/env python3
+ #
+ # SCons - a Software Constructor
+ #

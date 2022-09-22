@@ -1,0 +1,10 @@
+Document: scons
+Title: SCons documentation
+Author: The SCons Foundation
+Abstract: This manual describes what SCons is
+ and how it can be used to build applications.
+Section: Help/Books
+
+Format: HTML
+Index: /usr/share/doc/scons/HTML/index.html
+Files: /usr/share/doc/scons/HTML/*.html

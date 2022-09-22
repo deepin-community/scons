@@ -1,0 +1,21 @@
+Description:	Ignore nonexistent files before trying to use them in Java()
+Origin:		Debian
+Bug-Debian:	http://bugs.debian.org/338232
+Forwarded:	http://scons.tigris.org/issues/show_bug.cgi?id=2207
+
+Index: trunk/SCons/Tool/JavaCommon.py
+===================================================================
+--- a/SCons/Tool/JavaCommon.py
++++ b/SCons/Tool/JavaCommon.py
+@@ -283,7 +283,10 @@ if java_parsing:
+             return self.outer_state
+ 
+     def parse_java_file(fn, version=default_java_version):
+-        return parse_java(open(fn, 'r').read(), version)
++        try:
++            return parse_java(open(fn, 'r').read(), version)
++        except IOError:
++            return (None, [])
+ 
+     def parse_java(contents, version=default_java_version, trace=None):
+         """Parse a .java file and return a double of package directory,

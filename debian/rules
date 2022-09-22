@@ -1,0 +1,73 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+SCONS_FLAGS := $(subst parallel=,-j ,$(filter parallel=%,$(DEB_BUILD_OPTIONS)))
+
+%:
+	dh $@ --with python3
+
+override_dh_auto_configure:
+	@:
+
+override_dh_auto_build:
+	cd $(CURDIR)/doc/man && python3 ../../scripts/scons.py
+	cd $(CURDIR)/doc/user && python3 ../../scripts/scons.py
+
+override_dh_auto_install:
+	python3 setup.py install --prefix /usr --root '$(CURDIR)/debian/scons'
+	$(RM) -r debian/scons/usr/lib/python*/site-packages/SCons/Tool/docbook/
+
+override_dh_auto_clean:
+	$(RM) -r .sconsign.dblite bootstrap build $$(find * -name __pycache__ -type d)
+	$(RM) -r $(CURDIR)/SCons.egg-info $(CURDIR)/.pybuild
+	# generated documentation
+	$(RM) $(CURDIR)/doc/man/.sconsign.dblite
+	$(RM) $(CURDIR)/doc/man/mimetype
+	$(RM) $(CURDIR)/doc/man/*.1
+	$(RM) $(CURDIR)/doc/man/*.epub
+	$(RM) $(CURDIR)/doc/man/*.fo
+	$(RM) $(CURDIR)/doc/man/*.html
+	$(RM) $(CURDIR)/doc/man/*.pdf
+	$(RM) $(CURDIR)/doc/man/scons-time_db.xml
+	$(RM) $(CURDIR)/doc/man/scons-time_xi.xml
+	$(RM) $(CURDIR)/doc/man/scons_db.xml
+	$(RM) $(CURDIR)/doc/man/scons_xi.xml
+	$(RM) $(CURDIR)/doc/man/sconsign_db.xml
+	$(RM) $(CURDIR)/doc/man/sconsign_xi.xml
+	$(RM) $(CURDIR)/doc/user/.sconsign.dblite
+	$(RM) $(CURDIR)/doc/user/mimetype
+	$(RM) $(CURDIR)/doc/user/*.epub
+	$(RM) $(CURDIR)/doc/user/*.fo
+	$(RM) $(CURDIR)/doc/user/*.html
+	$(RM) $(CURDIR)/doc/user/*.pdf
+	$(RM) $(CURDIR)/doc/user/scons_db.xml
+	$(RM) $(CURDIR)/doc/user/scons_ex.xml
+	$(RM) $(CURDIR)/doc/user/scons_exi.xml
+	$(RM) $(CURDIR)/doc/user/scons_xi.xml
+	$(RM) -r $(CURDIR)/doc/man/META-INF/
+	$(RM) -r $(CURDIR)/doc/man/OEBPS/
+	$(RM) -r $(CURDIR)/doc/user/META-INF/
+	$(RM) -r $(CURDIR)/doc/user/OEBPS/
+	$(RM) -r $(CURDIR)/doc/user/scons-user/
+
+override_dh_installchangelogs:
+	dh_installchangelogs CHANGES.txt
+
+override_dh_installdocs:
+	dh_installdocs
+	# organize files
+	mv $(CURDIR)/debian/scons-doc/usr/share/doc/scons/scons-user/ \
+		$(CURDIR)/debian/scons-doc/usr/share/doc/scons/HTML
+	mv $(CURDIR)/debian/scons-doc/usr/share/doc/scons/scons.css \
+		$(CURDIR)/debian/scons-doc/usr/share/doc/scons/HTML/
+	mkdir $(CURDIR)/debian/scons-doc/usr/share/doc/scons/PDF
+	mv $(CURDIR)/debian/scons-doc/usr/share/doc/scons/scons-user.pdf \
+		$(CURDIR)/debian/scons-doc/usr/share/doc/scons/PDF
+
+override_dh_auto_test:
+ifeq (,$(findstring nocheck, $(DEB_BUILD_OPTIONS)))
+	python3 runtest.py --all --passed $(SCONS_FLAGS) || true
+endif

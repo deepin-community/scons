@@ -1,0 +1,37 @@
+Description: Support python 2 print statements in SConscripts
+ This fixes a regression introduced in scons-3.0.0, where
+ SConscripts containing python 2 print statements would cause
+ syntax errors even when executing scons with python 2.7.
+Origin: upstream, https://github.com/SConsProject/scons/commit/2e0de3c55f22b3eaa7767b69740b898f3d2f46bf
+Bug-Debian: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=878327
+Forwarded: not-needed
+Last-Update: 2017-10-13
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+Index: trunk/CHANGES.txt
+===================================================================
+--- a/src/CHANGES.txt
++++ b/src/CHANGES.txt
+@@ -11,6 +11,9 @@ NOTE: This is a major release.  You shou
+ Significant changes in some python action signatures. Also switching between PY 2.7 and PY 3.5, 3.6
+ will cause rebuilds.
+ 
++  From Thomas Berg:
++    - Fixed a regression in scons-3.0.0 where "from __future__ import print_function" was imposed
++      on the scope where SConstruct is executed, breaking existing builds using PY 2.7.
+ 
+   From William Blevins:
+     - Updated D language scanner support to latest: 2.071.1. (PR #1924)
+Index: trunk/engine/SCons/Script/SConscript.py
+===================================================================
+--- a/src/engine/SCons/Script/SConscript.py
++++ b/src/engine/SCons/Script/SConscript.py
+@@ -5,8 +5,6 @@ files.
+ 
+ """
+ 
+-from __future__ import print_function
+-
+ #
+ # Copyright (c) 2001 - 2017 The SCons Foundation
+ #

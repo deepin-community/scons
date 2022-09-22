@@ -1,0 +1,21 @@
+Description: Comment out the search for libs in local source dirs
+Author: Jörg Frings-Fürst <debian@jff-webhosting.net>
+Forwarded: https://pairlist2.pair.net/pipermail/scons-dev/2014-November/002008.html
+Last-Update: 2015-02-11
+---
+This patch header follows DEP-3: http://dep.debian.net/deps/dep3/
+Index: trunk/script/scons
+===================================================================
+--- a/src/script/scons.py
++++ b/src/script/scons.py
+@@ -77,8 +77,8 @@ if "SCONS_LIB_DIR" in os.environ:
+ 
+ # - running from source takes priority (since 2.3.2), excluding SCONS_LIB_DIR settings
+ script_path = os.path.abspath(os.path.dirname(__file__))
+-source_path = os.path.join(script_path, '..', 'engine')
+-libs.append(source_path)
++# source_path = os.path.join(script_path, '..', 'engine')
++# libs.append(source_path)
+ 
+ local_version = 'scons-local-' + __version__
+ local = 'scons-local'

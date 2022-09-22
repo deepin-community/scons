@@ -1,0 +1,59 @@
+From: Ben Hutchings <benh@debian.org>
+Date: Fri, 14 Aug 2020 21:42:01 +0100
+Subject: docbook: lxml: Fix man-page generation
+
+The docbook-xsl template for man-pages generates filenames and writes
+files itself, rather than producing an element tree.  Presumably
+libxslt overrides this behaviour somehow, but lxml does not.
+
+The current implementation of __build_lxml() will generate a man-page
+but then overwrite it with an empty file.  Change it to:
+
+1. Delete the output file, if it exists
+2. Run the transformation
+3. If the result has a root element, write the result to the output file
+4. Otherwise, check theat the output file was already written
+
+Do not swallow exceptions, which just made this issue harder to debug.
+---
+--- a/src/engine/SCons/Tool/docbook/__init__.py
++++ b/src/engine/SCons/Tool/docbook/__init__.py
+@@ -35,6 +35,7 @@ selection method.
+ import os
+ import glob
+ import re
++import errno
+ 
+ import SCons.Action
+ import SCons.Builder
+@@ -344,6 +345,13 @@ def __build_lxml(target, source, env):
+     xsl_tree = etree.parse(xsl_style)
+     transform = etree.XSLT(xsl_tree, access_control=xslt_ac)
+     doc = etree.parse(str(source[0]))
++
++    try:
++        os.remove(str(target[0]))
++    except (IOError, OSError) as e:
++        if e.errno != errno.ENOENT:
++            raise
++
+     # Support for additional parameters
+     parampass = {}
+     if parampass:
+@@ -351,11 +359,13 @@ def __build_lxml(target, source, env):
+     else:
+         result = transform(doc)
+ 
+-    try:
++    if result.getroot():
+         with open(str(target[0]), "wb") as of:
+             of.write(etree.tostring(result, pretty_print=True))
+-    except:
+-        pass
++    else:
++        # Stylesheet should have written the output file itself
++        with open(str(target[0]), 'rb') as of:
++            pass
+ 
+     return None
+ 

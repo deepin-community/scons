@@ -1,0 +1,47 @@
+Source: scons
+Section: devel
+Priority: optional
+Maintainer: Laszlo Boszormenyi (GCS) <gcs@debian.org>
+Build-Depends:
+ debhelper-compat (= 12),
+ dh-python,
+ python3-all (>= 3.5),
+ fop,
+ python3-lxml,
+ python3-setuptools,
+ biber <!nocheck>,
+ clang <!nocheck>,
+ gdc <!nocheck>,
+ ldc [amd64] <!nocheck>
+Standards-Version: 4.5.0
+Rules-Requires-Root: no
+Homepage: https://www.scons.org/
+Vcs-Git: https://salsa.debian.org/debian/scons.git
+Vcs-Browser: https://salsa.debian.org/debian/scons
+
+Package: scons
+Architecture: all
+Depends:
+ ${python3:Depends},
+ ${misc:Depends}
+Description: replacement for make
+ SCons is a make replacement providing a range of enhanced features such
+ as automated dependency generation and built in compilation cache
+ support.  SCons rule sets are Python scripts so as well as the features
+ it provides itself SCons allows you to use the full power of Python
+ to control compilation.
+
+Package: scons-doc
+Architecture: all
+Depends: ${misc:Depends}
+Breaks: scons-doc (<< 4.0.1)
+Replaces: scons-doc (<< 4.0.1)
+Suggests: scons (>= 4.0)
+Description: Documentation for SCons, a replacement for Make
+ SCons is a make replacement providing a range of enhanced features such
+ as automated dependency generation and built in compilation cache
+ support.  SCons rule sets are Python scripts so as well as the features
+ it provides itself SCons allows you to use the full power of Python
+ to control compilation.
+ .
+ This package provides the SCons User's guide.

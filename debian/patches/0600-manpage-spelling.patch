@@ -1,0 +1,313 @@
+From: Ben Hutchings <benh@debian.org>
+Date: Thu, 13 Aug 2020 17:37:00 +0100
+Subject: Correct manpage spelling errors
+
+Correct various spelling errors that end up in the man-pages.
+Thanks to Jörg Frings-Fürst <debian@jff-webhosting.net> for the
+original patch that modified the generated man-pages.
+---
+--- a/doc/generated/builders.gen
++++ b/doc/generated/builders.gen
+@@ -2402,7 +2402,7 @@ env.Substfile('foo.in', SUBST_DICT = bad
+ good_foo = [('$foobar', '$foobar'), ('$foo', '$foo')]
+ env.Substfile('foo.in', SUBST_DICT = good_foo)
+ 
+-# UNPREDICTABLE - one substitution could be futher expanded
++# UNPREDICTABLE - one substitution could be further expanded
+ bad_bar = {'@bar@': '@soap@', '@soap@': 'lye'}
+ env.Substfile('bar.in', SUBST_DICT = bad_bar)
+ 
+@@ -2561,7 +2561,7 @@ template (if necessary) and then updates
+ necessary). If <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="cv-POAUTOINIT"><envar>$POAUTOINIT</envar></link> is set, missing <literal>PO</literal> files
+ will be automatically created (i.e. without translator person intervention).
+ The variables <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="cv-LINGUAS_FILE"><envar>$LINGUAS_FILE</envar></link> and <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="cv-POTDOMAIN"><envar>$POTDOMAIN</envar></link> are taken into
+-acount too. All other construction variables used by <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="b-POTUpdate"><function>POTUpdate</function></link>, and
++account too. All other construction variables used by <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="b-POTUpdate"><function>POTUpdate</function></link>, and
+ <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="b-POUpdate"><function>POUpdate</function></link> work here too.
+ </para>
+ 
+@@ -2615,7 +2615,7 @@ factor" synchronizing these two scripts
+ <filename>LINGUAS</filename> file.  Note, that the updated
+ <literal>POT</literal> and <literal>PO</literal> files are usually going to be
+ committed back to the repository, so they must be updated within the source
+-directory (and not in variant directories). Additionaly, the file listing of
++directory (and not in variant directories). Additionally, the file listing of
+ <filename>po/</filename> directory contains <filename>LINGUAS</filename> file,
+ so the source tree looks familiar to translators, and they may work with the
+ project in their usual way.
+--- a/doc/generated/functions.gen
++++ b/doc/generated/functions.gen
+@@ -425,7 +425,7 @@ Example:
+ AllowSubstExceptions()
+ 
+ # Also allow a string containing a zero-division expansion
+-# like '${1 / 0}' to evalute to ''.
++# like '${1 / 0}' to evaluate to ''.
+ AllowSubstExceptions(IndexError, NameError, ZeroDivisionError)
+ </example_commands>
+ </listitem>
+@@ -3512,7 +3512,7 @@ file and returns to the calling SConscri
+ the values of the variables named in the
+ <varname>vars</varname>
+ string arguments.
+-Multiple strings contaning variable names may be passed to
++Multiple strings containing variable names may be passed to
+ <function xmlns="http://www.scons.org/dbxsd/v1.0">Return</function>.
+ Any strings that contain white space
+ </para>
+@@ -4589,7 +4589,7 @@ is not found but exists under
+ the file or directory is copied to
+ <varname>variant_dir</varname>.
+ Target files can be built in a different directory
+-than the original sources by simply refering to the sources (and targets)
++than the original sources by simply referring to the sources (and targets)
+ within the variant tree.
+ </para>
+ 
+--- a/doc/generated/variables.gen
++++ b/doc/generated/variables.gen
+@@ -1213,7 +1213,7 @@ The string displayed when a renderer lik
+     <term>DOCBOOK_FOPFLAGS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Additonal command-line flags for the
++Additional command-line flags for the
+ PDF renderer <literal>fop</literal> or <literal>xep</literal>.
+ </para>
+ </listitem>
+@@ -1251,7 +1251,7 @@ XIncludes for a given XML file.
+     <term>DOCBOOK_XMLLINTFLAGS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Additonal command-line flags for the external executable
++Additional command-line flags for the external executable
+ <literal>xmllint</literal>.
+ </para>
+ </listitem>
+@@ -1291,7 +1291,7 @@ an XML file via a given XSLT stylesheet.
+     <term>DOCBOOK_XSLTPROCFLAGS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Additonal command-line flags for the external executable
++Additional command-line flags for the external executable
+ <literal>xsltproc</literal> (or <literal>saxon</literal>, 
+ <literal>xalan</literal>).
+ </para>
+@@ -1301,7 +1301,7 @@ Additonal command-line flags for the ext
+     <term>DOCBOOK_XSLTPROCPARAMS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Additonal parameters that are not intended for the XSLT processor executable, but
++Additional parameters that are not intended for the XSLT processor executable, but
+ the XSL processing itself. By default, they get appended at the end of the command line
+ for <literal>saxon</literal> and <literal>saxon-xslt</literal>, respectively.
+ </para>
+@@ -4671,7 +4671,7 @@ on this system.
+     <term>NAME</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Specfies the name of the project to package.
++Specifies the name of the project to package.
+ </para>
+ </listitem>
+   </varlistentry>
+@@ -7103,7 +7103,7 @@ The suffix used for tar file names.
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+ The string (or character) to be used to join the arguments passed to TEMPFILE when command line exceeds the limit set by <envar xmlns="http://www.scons.org/dbxsd/v1.0">$MAXLINELENGTH</envar>.
+-The default value is a space. However for MSVC, MSLINK the default is a line seperator characters as defined by os.linesep.
++The default value is a space. However for MSVC, MSLINK the default is a line separator characters as defined by os.linesep.
+ Note this value is used literally and not expanded by the subst logic.
+ </para>
+ </listitem>
+@@ -7601,7 +7601,7 @@ field in the RPM
+     <term>X_RPM_EXTRADEFS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-A list used to supply extra defintions or flags
++A list used to supply extra definitions or flags
+ to be added to the RPM <filename>.spec</filename> file.
+ Each item is added as-is with a carriage return appended.
+ This is useful if some specific RPM feature not otherwise
+@@ -7857,7 +7857,7 @@ See <link xmlns="http://www.scons.org/db
+     <term>_XGETTEXTFROMFLAGS</term>
+     <listitem>
+ <para xmlns="http://www.scons.org/dbxsd/v1.0">
+-Internal "macro". Genrates list of <literal>-D&lt;dir&gt;</literal> flags
++Internal "macro". Generates list of <literal>-D&lt;dir&gt;</literal> flags
+ from the <link xmlns="http://www.scons.org/dbxsd/v1.0" linkend="cv-XGETTEXTPATH"><envar>$XGETTEXTPATH</envar></link> list.
+ </para>
+ </listitem>
+--- a/doc/man/scons.xml
++++ b/doc/man/scons.xml
+@@ -605,7 +605,7 @@ This saves time by not running the same
+ every time you invoke scons,
+ but will overlook changes in system header files
+ or external commands (such as compilers)
+-if you don't specify those dependecies explicitly.
++if you don't specify those dependencies explicitly.
+ This is the default behavior.</para>
+ 
+   </listitem>
+@@ -2193,7 +2193,7 @@ be redetected.</para>
+ 
+ <para> One feature now present within Scons is the ability to have nested tools.
+ Tools which can be located within a subdirectory in the toolpath.
+-With a nested tool name the dot represents a directory seperator</para>
++With a nested tool name the dot represents a directory separator</para>
+ 
+ <programlisting>
+ # namespaced builder
+@@ -5477,7 +5477,7 @@ to specify that an Action object's
+ return value should be ignored
+ under special conditions
+ and SCons should, therefore,
+-consider that the action always suceeds:</para>
++consider that the action always succeeds:</para>
+ 
+ <programlisting>
+ def always_succeed(s):
+--- a/src/engine/SCons/Environment.xml
++++ b/src/engine/SCons/Environment.xml
+@@ -3275,7 +3275,7 @@ is not found but exists under
+ the file or directory is copied to
+ <varname>variant_dir</varname>.
+ Target files can be built in a different directory
+-than the original sources by simply refering to the sources (and targets)
++than the original sources by simply referring to the sources (and targets)
+ within the variant tree.
+ </para>
+ 
+--- a/src/engine/SCons/Platform/__init__.xml
++++ b/src/engine/SCons/Platform/__init__.xml
+@@ -261,7 +261,7 @@ The default is '.lnk'.
+ <summary>
+ <para>
+ The string (or character) to be used to join the arguments passed to TEMPFILE when command line exceeds the limit set by &cv-MAXLINELENGTH;.
+-The default value is a space. However for MSVC, MSLINK the default is a line seperator characters as defined by os.linesep.
++The default value is a space. However for MSVC, MSLINK the default is a line separator characters as defined by os.linesep.
+ Note this value is used literally and not expanded by the subst logic.
+ </para>
+ </summary>
+--- a/src/engine/SCons/Script/SConscript.xml
++++ b/src/engine/SCons/Script/SConscript.xml
+@@ -317,7 +317,7 @@ file and returns to the calling SConscri
+ the values of the variables named in the
+ <varname>vars</varname>
+ string arguments.
+-Multiple strings contaning variable names may be passed to
++Multiple strings containing variable names may be passed to
+ &f-Return;.
+ Any strings that contain white space
+ </para>
+--- a/src/engine/SCons/Subst.xml
++++ b/src/engine/SCons/Subst.xml
+@@ -64,7 +64,7 @@ Example:
+ AllowSubstExceptions()
+ 
+ # Also allow a string containing a zero-division expansion
+-# like '${1 / 0}' to evalute to ''.
++# like '${1 / 0}' to evaluate to ''.
+ AllowSubstExceptions(IndexError, NameError, ZeroDivisionError)
+ </example_commands>
+ </summary>
+--- a/src/engine/SCons/Tool/docbook/__init__.xml
++++ b/src/engine/SCons/Tool/docbook/__init__.xml
+@@ -285,7 +285,7 @@ if one of them is installed (<literal>fo
+ <cvar name="DOCBOOK_XSLTPROCFLAGS">
+ <summary>
+ <para>
+-Additonal command-line flags for the external executable
++Additional command-line flags for the external executable
+ <literal>xsltproc</literal> (or <literal>saxon</literal>, 
+ <literal>xalan</literal>).
+ </para>
+@@ -295,7 +295,7 @@ Additonal command-line flags for the ext
+ <cvar name="DOCBOOK_XMLLINTFLAGS">
+ <summary>
+ <para>
+-Additonal command-line flags for the external executable
++Additional command-line flags for the external executable
+ <literal>xmllint</literal>.
+ </para>
+ </summary>
+@@ -304,7 +304,7 @@ Additonal command-line flags for the ext
+ <cvar name="DOCBOOK_FOPFLAGS">
+ <summary>
+ <para>
+-Additonal command-line flags for the
++Additional command-line flags for the
+ PDF renderer <literal>fop</literal> or <literal>xep</literal>.
+ </para>
+ </summary>
+@@ -313,7 +313,7 @@ PDF renderer <literal>fop</literal> or <
+ <cvar name="DOCBOOK_XSLTPROCPARAMS">
+ <summary>
+ <para>
+-Additonal parameters that are not intended for the XSLT processor executable, but
++Additional parameters that are not intended for the XSLT processor executable, but
+ the XSL processing itself. By default, they get appended at the end of the command line
+ for <literal>saxon</literal> and <literal>saxon-xslt</literal>, respectively.
+ </para>
+--- a/src/engine/SCons/Tool/gettext.xml
++++ b/src/engine/SCons/Tool/gettext.xml
+@@ -87,7 +87,7 @@ template (if necessary) and then updates
+ necessary). If &cv-link-POAUTOINIT; is set, missing <literal>PO</literal> files
+ will be automatically created (i.e. without translator person intervention).
+ The variables &cv-link-LINGUAS_FILE; and &cv-link-POTDOMAIN; are taken into
+-acount too. All other construction variables used by &b-link-POTUpdate;, and
++account too. All other construction variables used by &b-link-POTUpdate;, and
+ &b-link-POUpdate; work here too.
+ </para>
+ 
+@@ -141,7 +141,7 @@ factor" synchronizing these two scripts
+ <filename>LINGUAS</filename> file.  Note, that the updated
+ <literal>POT</literal> and <literal>PO</literal> files are usually going to be
+ committed back to the repository, so they must be updated within the source
+-directory (and not in variant directories). Additionaly, the file listing of
++directory (and not in variant directories). Additionally, the file listing of
+ <filename>po/</filename> directory contains <filename>LINGUAS</filename> file,
+ so the source tree looks familiar to translators, and they may work with the
+ project in their usual way.
+--- a/src/engine/SCons/Tool/packaging/__init__.xml
++++ b/src/engine/SCons/Tool/packaging/__init__.xml
+@@ -178,7 +178,7 @@ for a list of license names and SPDX cod
+ <cvar name="NAME">
+ <summary>
+ <para>
+-Specfies the name of the project to package.
++Specifies the name of the project to package.
+ </para>
+ </summary>
+ </cvar>
+@@ -476,7 +476,7 @@ field in the RPM
+ <cvar name="X_RPM_EXTRADEFS">
+ <summary>
+ <para>
+-A list used to supply extra defintions or flags
++A list used to supply extra definitions or flags
+ to be added to the RPM <filename>.spec</filename> file.
+ Each item is added as-is with a carriage return appended.
+ This is useful if some specific RPM feature not otherwise
+--- a/src/engine/SCons/Tool/textfile.xml
++++ b/src/engine/SCons/Tool/textfile.xml
+@@ -164,7 +164,7 @@ env.Substfile('foo.in', SUBST_DICT = bad
+ good_foo = [('$foobar', '$foobar'), ('$foo', '$foo')]
+ env.Substfile('foo.in', SUBST_DICT = good_foo)
+ 
+-# UNPREDICTABLE - one substitution could be futher expanded
++# UNPREDICTABLE - one substitution could be further expanded
+ bad_bar = {'@bar@': '@soap@', '@soap@': 'lye'}
+ env.Substfile('bar.in', SUBST_DICT = bad_bar)
+ 
+--- a/src/engine/SCons/Tool/xgettext.xml
++++ b/src/engine/SCons/Tool/xgettext.xml
+@@ -351,7 +351,7 @@ form source and target (default: <litera
+ <cvar name="_XGETTEXTFROMFLAGS">
+ <summary>
+ <para>
+-Internal "macro". Genrates list of <literal>-D&lt;dir&gt;</literal> flags
++Internal "macro". Generates list of <literal>-D&lt;dir&gt;</literal> flags
+ from the &cv-link-XGETTEXTPATH; list.
+ </para>
+ </summary>

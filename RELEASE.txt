@@ -1,0 +1,54 @@
+  A new SCons release, 4.0.1, is now available
+  on the SCons download page:
+
+          https://scons.org/pages/download.html
+
+  Here is a summary of the changes since 4.0.1:
+
+  NEW FUNCTIONALITY
+
+    - Added Environment() variable TEMPFILEDIR which allows setting the directory which temp
+      files createdby TEMPFILEMUNGE are created in.
+
+  DEPRECATED FUNCTIONALITY
+
+    - N/A
+
+  CHANGED/ENHANCED EXISTING FUNCTIONALITY
+
+    - N/A
+
+  FIXES
+
+    - Fix fortran tools to set SHFORTRAN variables to $FORTRAN, similarly SHF77, SHF90, SHF95,
+      SHF03 and SHF08 will default to the variables $F77, $F90, $F95, $F03 and $F08 respectively.
+      If you were depending on changing the value of FORTRAN (or $F[0-9][0-9]) having no effect
+      on the value of SHFORTRAN, this change will break that.   The values of FORTRAN, F77, F90,
+      F95, F03, F08 and SHFORTRAN, SHF77 (etc.) now are not overridden in generate if alredy set
+      by the user.
+    - Fix subprocess execution of 'lslpp' on AIX to produce text standard i/o.
+    - Re-do the fix for suncxx tool (Oracle Studio compiler) now that only Python 3 is supported,
+      to avoid decoding errors.
+
+  IMPROVEMENTS
+
+    - N/A
+
+  PACKAGING
+
+    - N/A
+
+  DOCUMENTATION
+
+    - N/A
+
+  DEVELOPMENT
+
+    - N/A
+
+  Thanks to the following contributors listed below for their contributions to this release.
+
+git shortlog --no-merges -ns 4.0.0..HEAD
+    12  William Deegan
+     2  Rob Boehne
+     1  Clemens Tolboom
