@@ -1,15 +1,6 @@
-"""SCons.Tool.gcc
-
-Tool-specific initialization for gcc.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -29,12 +20,18 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""SCons.Tool.gcc
+
+Tool-specific initialization for gcc.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+
+"""
 
 from . import cc
-import os
 import re
 import subprocess
 
@@ -60,6 +57,10 @@ def generate(env):
     if version:
         env['CCVERSION'] = version
 
+    env['CCDEPFLAGS'] = '-MMD -MF ${TARGET}.d'
+    env["NINJA_DEPFILE_PARSE_FORMAT"] = 'gcc'
+
+
 
 def exists(env):
     # is executable, and is a GNU compiler (or accepts '--version' at least)
@@ -77,21 +78,21 @@ def detect_version(env, cc):
     # GCC versions older than that, we should use --version and a
     # regular expression.
     # pipe = SCons.Action._subproc(env, SCons.Util.CLVar(cc) + ['-dumpversion'],
-    pipe=SCons.Action._subproc(env, SCons.Util.CLVar(cc) + ['--version'],
+    with SCons.Action._subproc(env, SCons.Util.CLVar(cc) + ['--version'],
                                  stdin='devnull',
                                  stderr='devnull',
-                                 stdout=subprocess.PIPE)
-    if pipe.wait() != 0:
-        return version
+                                 stdout=subprocess.PIPE) as pipe:
+        if pipe.wait() != 0:
+            return version
 
-    with pipe.stdout:
         # -dumpversion variant:
         # line = pipe.stdout.read().strip()
         # --version variant:
         line = SCons.Util.to_str(pipe.stdout.readline())
         # Non-GNU compiler's output (like AIX xlc's) may exceed the stdout buffer:
         # So continue with reading to let the child process actually terminate.
-        while SCons.Util.to_str(pipe.stdout.readline()):
+        # We don't need to know the rest of the data, so don't bother decoding.
+        while pipe.stdout.readline():
             pass
 
 

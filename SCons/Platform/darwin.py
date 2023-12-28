@@ -1,14 +1,6 @@
-"""SCons.Platform.darwin
-
-Platform-specific initialization for Mac OS X systems.
-
-There normally shouldn't be any need to import this module directly.  It
-will usually be imported through the generic SCons.Platform.Platform()
-selection method.
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,27 +20,33 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Platform-specific initialization for Mac OS X systems.
+
+There normally shouldn't be any need to import this module directly.  It
+will usually be imported through the generic SCons.Platform.Platform()
+selection method.
+"""
 
 from . import posix
 import os
 
+
 def generate(env):
     posix.generate(env)
     env['SHLIBSUFFIX'] = '.dylib'
+    env['HOST_OS'] = 'darwin'
     # put macports paths at front to override Apple's versions, fink path is after
     # For now let people who want Macports or Fink tools specify it!
     # env['ENV']['PATH'] = '/opt/local/bin:/opt/local/sbin:' + env['ENV']['PATH'] + ':/sw/bin'
     
     # Store extra system paths in env['ENV']['PATHOSX']
-    
+
     filelist = ['/etc/paths',]
     # make sure this works on Macs with Tiger or earlier
     try:
         dirlist = os.listdir('/etc/paths.d')
-    except:
+    except FileNotFoundError:
         dirlist = []
 
     for file in dirlist:

@@ -62,8 +62,20 @@ except Exception:
 prefer_xsltproc = False
 
 # Regexs for parsing Docbook XML sources of MAN pages
-re_manvolnum = re.compile("<manvolnum>([^<]*)</manvolnum>")
-re_refname = re.compile("<refname>([^<]*)</refname>")
+re_manvolnum = re.compile(r"<manvolnum>([^<]*)</manvolnum>")
+re_refname = re.compile(r"<refname>([^<]*)</refname>")
+
+#
+# lxml etree XSLT global max traversal depth
+#
+
+lmxl_xslt_global_max_depth = 3600
+
+if has_lxml and lmxl_xslt_global_max_depth:
+    def __lxml_xslt_set_global_max_depth(max_depth):
+        from lxml import etree
+        etree.XSLT.set_global_max_depth(max_depth)
+    __lxml_xslt_set_global_max_depth(lmxl_xslt_global_max_depth)
 
 #
 # Helper functions
@@ -203,8 +215,8 @@ def _detect(env):
 #
 # Scanners
 #
-include_re = re.compile('fileref\\s*=\\s*["|\']([^\\n]*)["|\']')
-sentity_re = re.compile('<!ENTITY\\s+%*\\s*[^\\s]+\\s+SYSTEM\\s+["|\']([^\\n]*)["|\']>')
+include_re = re.compile(r'fileref\\s*=\\s*["|\']([^\\n]*)["|\']')
+sentity_re = re.compile(r'<!ENTITY\\s+%*\\s*[^\\s]+\\s+SYSTEM\\s+["|\']([^\\n]*)["|\']>')
 
 def __xml_scan(node, env, path, arg):
     """ Simple XML file scanner, detecting local images and XIncludes as implicit dependencies. """
@@ -223,6 +235,7 @@ def __xml_scan(node, env, path, arg):
         # Try to call xsltproc
         xsltproc = env.subst("$DOCBOOK_XSLTPROC")
         if xsltproc and xsltproc.endswith('xsltproc'):
+            # TODO: switch to _subproc or subprocess.run call
             result = env.backtick(' '.join([xsltproc, xsl_file, str(node)]))
             depfiles = [x.strip() for x in str(result).splitlines() if x.strip() != "" and not x.startswith("<?xml ")]
             return depfiles
@@ -761,7 +774,7 @@ def DocbookXslt(env, target, source=None, *args, **kw):
     target, source = __extend_targets_sources(target, source)
 
     # Init XSL stylesheet
-    kw['DOCBOOK_XSL'] = kw.get('xsl', 'transform.xsl')
+    kw['DOCBOOK_XSL'] = env.File(kw.get('xsl', 'transform.xsl'))
 
     # Setup builder
     __builder = __select_builder(__lxml_builder, __xsltproc_builder)

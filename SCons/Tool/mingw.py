@@ -1,15 +1,6 @@
-"""SCons.Tool.gcc
-
-Tool-specific initialization for MinGW (http://www.mingw.org/)
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -29,9 +20,16 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""SCons.Tool.gcc
+
+Tool-specific initialization for MinGW (http://www.mingw.org/)
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+
+"""
 
 import os
 import os.path
@@ -43,13 +41,14 @@ import SCons.Defaults
 import SCons.Tool
 import SCons.Util
 
-mingw_paths = [
+mingw_base_paths = [
     r'c:\MinGW\bin',
     r'C:\cygwin64\bin',
     r'C:\msys64',
     r'C:\msys64\mingw64\bin',
     r'C:\cygwin\bin',
     r'C:\msys',
+    r'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
 ]
 
 
@@ -128,21 +127,33 @@ def find_version_specific_mingw_paths():
     One example of default mingw install paths is:
     C:\mingw-w64\x86_64-6.3.0-posix-seh-rt_v5-rev2\mingw64\bin
 
-    Use glob'ing to find such and add to mingw_paths
+    Use glob'ing to find such and add to mingw_base_paths
     """
     new_paths = glob.glob(r"C:\mingw-w64\*\mingw64\bin")
 
     return new_paths
 
 
+_mingw_all_paths = None
+
+def get_mingw_paths():
+    global _mingw_all_paths
+    if _mingw_all_paths is None:
+        _mingw_all_paths = mingw_base_paths + find_version_specific_mingw_paths()
+    return _mingw_all_paths
+
 def generate(env):
-    global mingw_paths
     # Check for reasoanble mingw default paths
-    mingw_paths += find_version_specific_mingw_paths()
+    mingw_paths = get_mingw_paths()
 
     mingw = SCons.Tool.find_program_path(env, key_program, default_paths=mingw_paths)
     if mingw:
         mingw_bin_dir = os.path.dirname(mingw)
+
+        # Adjust path if we found it in a chocolatey install
+        if mingw_bin_dir == r'C:\ProgramData\chocolatey\bin':
+            mingw_bin_dir = r'C:\ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin'
+
         env.AppendENVPath('PATH', mingw_bin_dir)
 
     # Most of mingw is the same as gcc and friends...
@@ -163,21 +174,20 @@ def generate(env):
     env['SHCXXFLAGS'] = SCons.Util.CLVar('$CXXFLAGS')
     env['SHLINKFLAGS'] = SCons.Util.CLVar('$LINKFLAGS -shared')
     env['SHLINKCOM'] = shlib_action
+    env['SHLINKCOMSTR'] = shlib_generator
     env['LDMODULECOM'] = ldmodule_action
     env.Append(SHLIBEMITTER=[shlib_emitter])
     env.Append(LDMODULEEMITTER=[shlib_emitter])
     env['AS'] = 'as'
 
-    env['WIN32DEFPREFIX'] = ''
-    env['WIN32DEFSUFFIX'] = '.def'
-    env['WINDOWSDEFPREFIX'] = '${WIN32DEFPREFIX}'
-    env['WINDOWSDEFSUFFIX'] = '${WIN32DEFSUFFIX}'
+    env['WINDOWSDEFPREFIX'] = ''
+    env['WINDOWSDEFSUFFIX'] = '.def'
 
     env['SHOBJSUFFIX'] = '.o'
     env['STATIC_AND_SHARED_OBJECTS_ARE_THE_SAME'] = 1
     env['RC'] = 'windres'
     env['RCFLAGS'] = SCons.Util.CLVar('')
-    env['RCINCFLAGS'] = '$( ${_concat(RCINCPREFIX, CPPPATH, RCINCSUFFIX, __env__, RDirs, TARGET, SOURCE)} $)'
+    env['RCINCFLAGS'] = '${_concat(RCINCPREFIX, CPPPATH, RCINCSUFFIX, __env__, RDirs, TARGET, SOURCE, affect_signature=False)}'
     env['RCINCPREFIX'] = '--include-dir '
     env['RCINCSUFFIX'] = ''
     env['RCCOM'] = '$RC $_CPPDEFFLAGS $RCINCFLAGS ${RCINCPREFIX} ${SOURCE.dir} $RCFLAGS -i $SOURCE -o $TARGET'
@@ -189,8 +199,19 @@ def generate(env):
     env['LIBSUFFIX'] = '.a'
     env['PROGSUFFIX'] = '.exe'
 
+    # Handle new versioned shared library logic
+    env['_SHLIBSUFFIX'] = '$SHLIBSUFFIX'
+    env["SHLIBPREFIX"] = ""
+
+    # Disable creating symlinks for versioned shared library.
+    env['SHLIBNOVERSIONSYMLINKS'] = True
+    env['LDMODULENOVERSIONSYMLINKS'] = True
+    env['IMPLIBNOVERSIONSYMLINKS'] = True
+
+
 
 def exists(env):
+    mingw_paths = get_mingw_paths()
     mingw = SCons.Tool.find_program_path(env, key_program, default_paths=mingw_paths)
     if mingw:
         mingw_bin_dir = os.path.dirname(mingw)

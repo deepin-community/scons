@@ -1,17 +1,6 @@
-"""scons.Node.FS
-
-File system nodes.
-
-These Nodes represent the canonical external objects that people think
-of when they think of building software: files and directories.
-
-This holds a "default_fs" variable that should be initialized with an FS
-that can be used by scripts or modules looking for the canonical default.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -31,32 +20,39 @@ that can be used by scripts or modules looking for the canonical default.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
+"""File system nodes.
+
+These Nodes represent the canonical external objects that people think
+of when they think of building software: files and directories.
+
+This holds a "default_fs" variable that should be initialized with an FS
+that can be used by scripts or modules looking for the canonical default.
+"""
+
+import codecs
 import fnmatch
+import importlib.util
 import os
 import re
 import shutil
 import stat
 import sys
 import time
-import codecs
 from itertools import chain
-import importlib.util
+from typing import Optional
 
 import SCons.Action
 import SCons.Debug
-from SCons.Debug import logInstanceCreation
 import SCons.Errors
 import SCons.Memoize
 import SCons.Node
 import SCons.Node.Alias
 import SCons.Subst
 import SCons.Util
-from SCons.Util import MD5signature, MD5filesignature, MD5collect
 import SCons.Warnings
-
-from SCons.Debug import Trace
+from SCons.Debug import logInstanceCreation, Trace
+from SCons.Util import hash_signature, hash_file_signature, hash_collect
 
 print_duplicate = 0
 
@@ -86,7 +82,7 @@ class EntryProxyAttributeError(AttributeError):
     of the underlying Entry involved in an AttributeError exception.
     """
     def __init__(self, entry_proxy, attribute):
-        AttributeError.__init__(self)
+        super().__init__()
         self.entry_proxy = entry_proxy
         self.attribute = attribute
     def __str__(self):
@@ -259,7 +255,7 @@ else:
 def _copy_func(fs, src, dest):
     shutil.copy2(src, dest)
     st = fs.stat(src)
-    fs.chmod(dest, stat.S_IMODE(st[stat.ST_MODE]) | stat.S_IWRITE)
+    fs.chmod(dest, stat.S_IMODE(st.st_mode) | stat.S_IWRITE)
 
 
 Valid_Duplicates = ['hard-soft-copy', 'soft-hard-copy',
@@ -382,20 +378,33 @@ else:
         return x.upper()
 
 
-
 class DiskChecker:
-    def __init__(self, type, do, ignore):
-        self.type = type
-        self.do = do
-        self.ignore = ignore
-        self.func = do
+    """
+    Implement disk check variation.
+
+    This Class will hold functions to determine what this particular disk
+    checking implementation should do when enabled or disabled.
+    """
+    def __init__(self, disk_check_type, do_check_function, ignore_check_function):
+        self.disk_check_type = disk_check_type
+        self.do_check_function = do_check_function
+        self.ignore_check_function = ignore_check_function
+        self.func = do_check_function
+
     def __call__(self, *args, **kw):
         return self.func(*args, **kw)
-    def set(self, list):
-        if self.type in list:
-            self.func = self.do
+
+    def enable(self, disk_check_type_list):
+        """
+        If the current object's disk_check_type matches any in the list passed
+        :param disk_check_type_list: List of disk checks to enable
+        :return:
+        """
+        if self.disk_check_type in disk_check_type_list:
+            self.func = self.do_check_function
         else:
-            self.func = self.ignore
+            self.func = self.ignore_check_function
+
 
 def do_diskcheck_match(node, predicate, errorfmt):
     result = predicate()
@@ -413,9 +422,9 @@ def do_diskcheck_match(node, predicate, errorfmt):
     if result:
         raise TypeError(errorfmt % node.get_abspath())
 
+
 def ignore_diskcheck_match(node, predicate, errorfmt):
     pass
-
 
 
 diskcheck_match = DiskChecker('match', do_diskcheck_match, ignore_diskcheck_match)
@@ -424,13 +433,14 @@ diskcheckers = [
     diskcheck_match,
 ]
 
-def set_diskcheck(list):
+
+def set_diskcheck(enabled_checkers):
     for dc in diskcheckers:
-        dc.set(list)
+        dc.enable(enabled_checkers)
+
 
 def diskcheck_types():
-    return [dc.type for dc in diskcheckers]
-
+    return [dc.disk_check_type for dc in diskcheckers]
 
 
 class EntryProxy(SCons.Util.Proxy):
@@ -439,13 +449,18 @@ class EntryProxy(SCons.Util.Proxy):
 
     # In PY3 if a class defines __eq__, then it must explicitly provide
     # __hash__.  Since SCons.Util.Proxy provides __eq__ we need the following
-    # see: https://docs.python.org/3.1/reference/datamodel.html#object.__hash__
+    # see: https://docs.python.org/3/reference/datamodel.html#object.__hash__
     __hash__ = SCons.Util.Delegate('__hash__')
 
     def __get_abspath(self):
         entry = self.get()
         return SCons.Subst.SpecialAttrWrapper(entry.get_abspath(),
                                              entry.name + "_abspath")
+
+    def __get_relpath(self):
+        entry = self.get()
+        return SCons.Subst.SpecialAttrWrapper(entry.get_relpath(),
+                                             entry.name + "_relpath")
 
     def __get_filebase(self):
         name = self.get().name
@@ -515,6 +530,7 @@ class EntryProxy(SCons.Util.Proxy):
                          "srcdir"   : __get_srcdir,
                          "dir"      : __get_dir,
                          "abspath"  : __get_abspath,
+                         "relpath"  : __get_relpath,
                          "filebase" : __get_filebase,
                          "suffix"   : __get_suffix,
                          "file"     : __get_file,
@@ -577,7 +593,7 @@ class Base(SCons.Node.Node):
         signatures."""
 
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Node.FS.Base')
-        SCons.Node.Node.__init__(self)
+        super().__init__()
 
         # Filenames and paths are probably reused and are intern'ed to save some memory.
         # Filename with extension as it was specified when the object was
@@ -731,10 +747,7 @@ class Base(SCons.Node.Node):
         return SCons.Node._rexists_map[self._func_rexists](self)
 
     def getmtime(self):
-        if self.islink():
-            st = self.lstat()
-        else:
-            st = self.stat()
+        st = self.stat()
 
         if st:
             return st[stat.ST_MTIME]
@@ -742,32 +755,28 @@ class Base(SCons.Node.Node):
             return None
 
     def getsize(self):
-        if self.islink():
-            st = self.lstat()
-        else:
-            st = self.stat()
+        st = self.stat()
 
         if st:
-            return st[stat.ST_SIZE]
+            return st.st_size
         else:
             return None
 
     def isdir(self):
         st = self.stat()
-        return st is not None and stat.S_ISDIR(st[stat.ST_MODE])
+        return st is not None and stat.S_ISDIR(st.st_mode)
 
     def isfile(self):
         st = self.stat()
-        return st is not None and stat.S_ISREG(st[stat.ST_MODE])
+        return st is not None and stat.S_ISREG(st.st_mode)
 
     if hasattr(os, 'symlink'):
         def islink(self):
-            try: st = self.fs.lstat(self.get_abspath())
-            except os.error: return 0
-            return stat.S_ISLNK(st[stat.ST_MODE])
+            st = self.lstat()
+            return st is not None and stat.S_ISLNK(st.st_mode)
     else:
         def islink(self):
-            return 0                    # no symlinks
+            return False                    # no symlinks
 
     def is_under(self, dir):
         if self is dir:
@@ -835,6 +844,10 @@ class Base(SCons.Node.Node):
     def get_labspath(self):
         """Get the absolute path of the file."""
         return self.dir.entry_labspath(self.name)
+
+    def get_relpath(self):
+        """Get the path of the file relative to the root SConstruct file's directory."""
+        return os.path.relpath(self.dir.entry_abspath(self.name), self.fs.SConstruct_dir.get_abspath())
 
     def get_internal_path(self):
         if self.dir._path == '.':
@@ -943,10 +956,11 @@ class Base(SCons.Node.Node):
 
 # Dict that provides a simple backward compatibility
 # layer for the Node attributes 'abspath', 'labspath',
-# 'path', 'tpath' and 'path_elements'.
+# 'relpath', 'path', 'tpath' and 'path_elements'.
 # @see Base.__getattr__ above
 node_bwcomp = {'abspath' : Base.get_abspath,
                'labspath' : Base.get_labspath,
+               'relpath' : Base.get_relpath,
                'path' : Base.get_internal_path,
                'tpath' : Base.get_tpath,
                'path_elements' : Base.get_path_elements,
@@ -976,7 +990,7 @@ class Entry(Base):
                  'contentsig']
 
     def __init__(self, name, directory, fs):
-        Base.__init__(self, name, directory, fs)
+        super().__init__(name, directory, fs)
         self._func_exists = 3
         self._func_get_contents = 1
 
@@ -985,7 +999,7 @@ class Entry(Base):
 
     def disambiguate(self, must_exist=None):
         """
-        """ 
+        """
         if self.isfile():
             self.__class__ = File
             self._morph()
@@ -1111,56 +1125,81 @@ class LocalFS:
     needs to use os.chdir() directly to avoid recursion.  Will we
     really need this one?
     """
-    #def chdir(self, path):
-    #    return os.chdir(path)
+
     def chmod(self, path, mode):
         return os.chmod(path, mode)
+
     def copy(self, src, dst):
         return shutil.copy(src, dst)
+
     def copy2(self, src, dst):
         return shutil.copy2(src, dst)
+
     def exists(self, path):
         return os.path.exists(path)
+
     def getmtime(self, path):
         return os.path.getmtime(path)
+
     def getsize(self, path):
         return os.path.getsize(path)
+
     def isdir(self, path):
         return os.path.isdir(path)
+
     def isfile(self, path):
         return os.path.isfile(path)
+
     def link(self, src, dst):
         return os.link(src, dst)
+
     def lstat(self, path):
         return os.lstat(path)
+
     def listdir(self, path):
         return os.listdir(path)
-    def makedirs(self, path):
-        return os.makedirs(path)
-    def mkdir(self, path):
-        return os.mkdir(path)
+
+    def scandir(self, path):
+        return os.scandir(path)
+
+    def makedirs(self, path, mode=0o777, exist_ok=False):
+        return os.makedirs(path, mode=mode, exist_ok=exist_ok)
+
+    def mkdir(self, path, mode=0o777):
+        return os.mkdir(path, mode=mode)
+
     def rename(self, old, new):
         return os.rename(old, new)
+
     def stat(self, path):
         return os.stat(path)
+
     def symlink(self, src, dst):
         return os.symlink(src, dst)
+
     def open(self, path):
         return open(path)
+
     def unlink(self, path):
         return os.unlink(path)
 
     if hasattr(os, 'symlink'):
+
         def islink(self, path):
             return os.path.islink(path)
+
     else:
+
         def islink(self, path):
-            return 0                    # no symlinks
+            return False  # no symlinks
 
     if hasattr(os, 'readlink'):
+
         def readlink(self, file):
             return os.readlink(file)
+
     else:
+
         def readlink(self, file):
             return ''
 
@@ -1214,7 +1253,7 @@ class FS(LocalFS):
         else:
             return "<no cwd>"
 
-    def chdir(self, dir, change_os_dir=0):
+    def chdir(self, dir, change_os_dir=False):
         """Change the current working directory for lookups.
         If change_os_dir is true, we will also change the "real" cwd
         to match.
@@ -1543,7 +1582,7 @@ class Dir(Base):
 
     def __init__(self, name, directory, fs):
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Node.FS.Dir')
-        Base.__init__(self, name, directory, fs)
+        super().__init__(name, directory, fs)
         self._morph()
 
     def _morph(self):
@@ -1870,7 +1909,7 @@ class Dir(Base):
         node is called which has a child directory, the child
         directory should return the hash of its contents."""
         contents = self.get_contents()
-        return MD5signature(contents)
+        return hash_signature(contents)
 
     def do_duplicate(self, src):
         pass
@@ -1908,7 +1947,7 @@ class Dir(Base):
             return self.srcdir
         return Base.srcnode(self)
 
-    def get_timestamp(self):
+    def get_timestamp(self) -> int:
         """Return the latest timestamp from among our children"""
         stamp = 0
         for kid in self.children():
@@ -1916,11 +1955,11 @@ class Dir(Base):
                 stamp = kid.get_timestamp()
         return stamp
 
-    def get_abspath(self):
+    def get_abspath(self) -> str:
         """Get the absolute path of the file."""
         return self._abspath
 
-    def get_labspath(self):
+    def get_labspath(self) -> str:
         """Get the absolute path of the file."""
         return self._labspath
 
@@ -2132,49 +2171,52 @@ class Dir(Base):
         for dirname in [n for n in names if isinstance(entries[n], Dir)]:
             entries[dirname].walk(func, arg)
 
-    def glob(self, pathname, ondisk=True, source=False, strings=False, exclude=None):
-        """
-        Returns a list of Nodes (or strings) matching a specified
-        pathname pattern.
+    def glob(self, pathname, ondisk=True, source=False, strings=False, exclude=None) -> list:
+        """Returns a list of Nodes (or strings) matching a pathname pattern.
 
-        Pathname patterns follow UNIX shell semantics:  * matches
-        any-length strings of any characters, ? matches any character,
-        and [] can enclose lists or ranges of characters.  Matches do
-        not span directory separators.
+        Pathname patterns follow POSIX shell syntax::
 
-        The matches take into account Repositories, returning local
-        Nodes if a corresponding entry exists in a Repository (either
+          *      matches everything
+          ?      matches any single character
+          [seq]  matches any character in seq (ranges allowed)
+          [!seq] matches any char not in seq
+
+        The wildcard characters can be escaped by enclosing in brackets.
+        A leading dot is not matched by a wildcard, and needs to be
+        explicitly included in the pattern to be matched.  Matches also
+        do not span directory separators.
+
+        The matches take into account Repositories, returning a local
+        Node if a corresponding entry exists in a Repository (either
         an in-memory Node or something on disk).
 
-        By defafult, the glob() function matches entries that exist
-        on-disk, in addition to in-memory Nodes.  Setting the "ondisk"
-        argument to False (or some other non-true value) causes the glob()
-        function to only match in-memory Nodes.  The default behavior is
-        to return both the on-disk and in-memory Nodes.
+        The underlying algorithm is adapted from a rather old version
+        of :func:`glob.glob` function in the Python standard library
+        (heavily modified), and uses :func:`fnmatch.fnmatch` under the covers.
 
-        The "source" argument, when true, specifies that corresponding
-        source Nodes must be returned if you're globbing in a build
-        directory (initialized with VariantDir()).  The default behavior
-        is to return Nodes local to the VariantDir().
+        This is the internal implementation of the external Glob API.
 
-        The "strings" argument, when true, returns the matches as strings,
-        not Nodes.  The strings are path names relative to this directory.
+        Args:
+          pattern: pathname pattern to match.
+          ondisk: if false, restricts matches to in-memory Nodes.
+            By defafult, matches entries that exist on-disk in addition
+            to in-memory Nodes.
+          source: if true, corresponding source Nodes are returned if
+            globbing in a variant directory.  The default behavior
+            is to return Nodes local to the variant directory.
+          strings: if true, returns the matches as strings instead of
+            Nodes. The strings are path names relative to this directory.
+          exclude: if not ``None``, must be a pattern or a list of patterns
+            following the same POSIX shell semantics.  Elements matching at
+            least one pattern from *exclude* will be excluded from the result.
 
-        The "exclude" argument, if not None, must be a pattern or a list
-        of patterns following the same UNIX shell semantics.
-        Elements matching a least one pattern of this list will be excluded
-        from the result.
-
-        The underlying algorithm is adapted from the glob.glob() function
-        in the Python library (but heavily modified), and uses fnmatch()
-        under the covers.
         """
         dirname, basename = os.path.split(pathname)
         if not dirname:
             result = self._glob1(basename, ondisk, source, strings)
         else:
             if has_glob_magic(dirname):
-                list = self.glob(dirname, ondisk, source, False, exclude)
+                list = self.glob(dirname, ondisk, source, strings=False, exclude=exclude)
             else:
                 list = [self.Dir(dirname, create=True)]
             result = []
@@ -2201,7 +2243,8 @@ class Dir(Base):
         corresponding entries and returns a Node (or string) relative
         to the current directory if an entry is found anywhere.
 
-        TODO: handle pattern with no wildcard
+        TODO: handle pattern with no wildcard. Python's glob.glob uses
+        a separate _glob0 function to do this.
         """
         search_dir_list = self.get_all_rdirs()
         for srcdir in self.srcdir_list():
@@ -2374,7 +2417,7 @@ class RootDir(Dir):
             return
         Base.must_be_same(self, klass)
 
-    def _lookup_abs(self, p, klass, create=1):
+    def _lookup_abs(self, p, klass, create=True):
         """
         Fast (?) lookup of a *normalized* absolute path.
 
@@ -2399,7 +2442,7 @@ class RootDir(Dir):
                 raise SCons.Errors.UserError(msg)
             # There is no Node for this path name, and we're allowed
             # to create it.
-            dir_name, file_name = p.rsplit('/',1)
+            dir_name, file_name = p.rsplit('/', 1)
             dir_node = self._lookup_abs(dir_name, Dir)
             result = klass(file_name, dir_node, self.fs)
 
@@ -2532,7 +2575,7 @@ class FileBuildInfo(SCons.Node.BuildInfoBase):
         if key != 'dependency_map' and hasattr(self, 'dependency_map'):
             del self.dependency_map
 
-        return super(FileBuildInfo, self).__setattr__(key, value)
+        return super().__setattr__(key, value)
 
     def convert_to_sconsign(self):
         """
@@ -2634,7 +2677,8 @@ class File(Base):
     NodeInfo = FileNodeInfo
     BuildInfo = FileBuildInfo
 
-    md5_chunksize = 64
+    # Although the command-line argument is in kilobytes, this is in bytes.
+    hash_chunksize = 65536
 
     def diskcheck_match(self):
         diskcheck_match(self, self.isdir,
@@ -2642,7 +2686,7 @@ class File(Base):
 
     def __init__(self, name, directory, fs):
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Node.FS.File')
-        Base.__init__(self, name, directory, fs)
+        super().__init__(name, directory, fs)
         self._morph()
 
     def Entry(self, name):
@@ -2697,11 +2741,13 @@ class File(Base):
     def scanner_key(self):
         return self.get_suffix()
 
-    def get_contents(self):
+    def get_contents(self) -> bytes:
+        """Return the contents of the file as bytes."""
         return SCons.Node._get_contents_map[self._func_get_contents](self)
 
-    def get_text_contents(self):
-        """
+    def get_text_contents(self) -> str:
+        """Return the contents of the file in text form.
+
         This attempts to figure out what the encoding of the text is
         based upon the BOM bytes, and then decodes the contents so that
         it's a valid python string.
@@ -2725,18 +2771,17 @@ class File(Base):
             try:
                 return contents.decode('latin-1')
             except UnicodeDecodeError as e:
-                return contents.decode('utf-8', error='backslashreplace')
+                return contents.decode('utf-8', errors='backslashreplace')
 
-
-    def get_content_hash(self):
+    def get_content_hash(self) -> str:
         """
-        Compute and return the MD5 hash for this file.
+        Compute and return the hash for this file.
         """
         if not self.rexists():
-            return MD5signature('')
+            return hash_signature(SCons.Util.NOFILE)
         fname = self.rfile().get_abspath()
         try:
-            cs = MD5filesignature(fname, chunksize=File.md5_chunksize * 1024)
+            cs = hash_file_signature(fname, chunksize=File.hash_chunksize)
         except EnvironmentError as e:
             if not e.filename:
                 e.filename = fname
@@ -2744,7 +2789,7 @@ class File(Base):
         return cs
 
     @SCons.Memoize.CountMethodCall
-    def get_size(self):
+    def get_size(self) -> int:
         try:
             return self._memo['get_size']
         except KeyError:
@@ -2753,14 +2798,14 @@ class File(Base):
         if self.rexists():
             size = self.rfile().getsize()
         else:
-            size = 0
+            # sentinel value for doesn't exist, even in repository
+            size = -1
 
         self._memo['get_size'] = size
-
         return size
 
     @SCons.Memoize.CountMethodCall
-    def get_timestamp(self):
+    def get_timestamp(self) -> int:
         try:
             return self._memo['get_timestamp']
         except KeyError:
@@ -2772,7 +2817,6 @@ class File(Base):
             timestamp = 0
 
         self._memo['get_timestamp'] = timestamp
-
         return timestamp
 
     convert_copy_attrs = [
@@ -2783,7 +2827,6 @@ class File(Base):
         'bactsig',
         'ninfo',
     ]
-
 
     convert_sig_attrs = [
         'bsourcesigs',
@@ -3177,7 +3220,7 @@ class File(Base):
     # SIGNATURE SUBSYSTEM
     #
 
-    def get_max_drift_csig(self):
+    def get_max_drift_csig(self) -> Optional[str]:
         """
         Returns the content signature currently stored for this node
         if it's been unmodified longer than the max_drift value, or the
@@ -3203,15 +3246,8 @@ class File(Base):
 
         return None
 
-    def get_csig(self):
-        """
-        Generate a node's content signature, the digested signature
-        of its content.
-
-        node - the node
-        cache - alternate node to use for the signature cache
-        returns - the content signature
-        """
+    def get_csig(self) -> str:
+        """Generate a node's content signature."""
         ninfo = self.get_ninfo()
         try:
             return ninfo.csig
@@ -3220,9 +3256,11 @@ class File(Base):
 
         csig = self.get_max_drift_csig()
         if csig is None:
-
             try:
-                if self.get_size() < File.md5_chunksize:
+                size = self.get_size()
+                if size == -1:
+                    contents = SCons.Util.NOFILE
+                elif size < File.hash_chunksize:
                     contents = self.get_contents()
                 else:
                     csig = self.get_content_hash()
@@ -3234,7 +3272,7 @@ class File(Base):
                 csig = ''
             else:
                 if not csig:
-                    csig = SCons.Util.MD5signature(contents)
+                    csig = SCons.Util.hash_signature(contents)
 
         ninfo.csig = csig
 
@@ -3621,9 +3659,10 @@ class File(Base):
         except AttributeError:
             pass
 
-        cachedir, cachefile = self.get_build_env().get_CacheDir().cachepath(self)
+        cache = self.get_build_env().get_CacheDir()
+        cachedir, cachefile = cache.cachepath(self)
         if not self.exists() and cachefile and os.path.exists(cachefile):
-            self.cachedir_csig = MD5filesignature(cachefile, File.md5_chunksize * 1024)
+            self.cachedir_csig = cache.get_cachedir_csig(self)
         else:
             self.cachedir_csig = self.get_csig()
         return self.cachedir_csig
@@ -3643,7 +3682,7 @@ class File(Base):
 
         executor = self.get_executor()
 
-        result = self.contentsig = MD5signature(executor.get_contents())
+        result = self.contentsig = hash_signature(executor.get_contents())
         return result
 
     def get_cachedir_bsig(self):
@@ -3674,7 +3713,7 @@ class File(Base):
         sigs.append(self.get_internal_path())
 
         # Merge this all into a single signature
-        result = self.cachesig = MD5collect(sigs)
+        result = self.cachesig = hash_collect(sigs)
         return result
 
 default_fs = None
@@ -3728,7 +3767,10 @@ class FileFinder:
         return None
 
     def _find_file_key(self, filename, paths, verbose=None):
-        return (filename, paths)
+        # Note: paths could be a list, which is not hashable. If it is, convert
+        # it to a tuple, which is hashable.
+        paths_entry = tuple(paths) if isinstance(paths, list) else paths
+        return (filename, paths_entry)
 
     @SCons.Memoize.CountDictCall(_find_file_key)
     def find_file(self, filename, paths, verbose=None):

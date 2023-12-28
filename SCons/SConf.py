@@ -1,18 +1,6 @@
-"""SCons.SConf
-
-Autoconf-like configuration support.
-
-In other words, SConf allows to run tests on the build machine to detect
-capabilities of system and do some things based on result: generate config
-files, header files for C/C++, update variables in environment.
-
-Tests on the build system can detect if compiler sees header files, if
-libraries are installed, if some command line options are supported etc.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -32,8 +20,16 @@ libraries are installed, if some command line options are supported etc.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""Autoconf-like configuration support.
+
+In other words, SConf allows to run tests on the build machine to detect
+capabilities of system and do some things based on result: generate config
+files, header files for C/C++, update variables in environment.
+
+Tests on the build system can detect if compiler sees header files, if
+libraries are installed, if some command line options are supported etc.
+"""
 
 import SCons.compat
 
@@ -47,7 +43,7 @@ import traceback
 import SCons.Action
 import SCons.Builder
 import SCons.Errors
-import SCons.Job
+import SCons.Taskmaster.Job
 import SCons.Node.FS
 import SCons.Taskmaster
 import SCons.Util
@@ -76,6 +72,9 @@ AUTO=0  # use SCons dependency scanning for up-to-date checks
 FORCE=1 # force all tests to be rebuilt
 CACHE=2 # force all tests to be taken from cache (raise an error, if necessary)
 cache_mode = AUTO
+
+def _set_conftest_node(node):
+    node.attributes.conftest_node = 1
 
 def SetCacheMode(mode):
     """Set the Configure cache mode. mode must be one of "auto", "force",
@@ -136,14 +135,14 @@ def CreateConfigHBuilder(env):
         env.SConfigHBuilder(k, env.Value(v))
 
 
-class SConfWarning(SCons.Warnings.Warning):
+class SConfWarning(SCons.Warnings.SConsWarning):
     pass
 SCons.Warnings.enableWarningClass(SConfWarning)
 
 # some error definitions
 class SConfError(SCons.Errors.UserError):
     def __init__(self,msg):
-        SCons.Errors.UserError.__init__(self,msg)
+        super().__init__(msg)
 
 class ConfigureDryRunError(SConfError):
     """Raised when a file or directory needs to be updated during a Configure
@@ -153,13 +152,13 @@ class ConfigureDryRunError(SConfError):
             msg = 'Cannot create configure directory "%s" within a dry-run.' % str(target)
         else:
             msg = 'Cannot update configure test "%s" within a dry-run.' % str(target)
-        SConfError.__init__(self,msg)
+        super().__init__(msg)
 
 class ConfigureCacheError(SConfError):
     """Raised when a use explicitely requested the cache feature, but the test
     is run the first time."""
     def __init__(self,target):
-        SConfError.__init__(self, '"%s" is not yet built and cache is forced.' % str(target))
+        super().__init__('"%s" is not yet built and cache is forced.' % str(target))
 
 
 # define actions for building text files
@@ -228,6 +227,8 @@ class SConfBuildTask(SCons.Taskmaster.AlwaysTask):
     This is almost the same as SCons.Script.BuildTask. Handles SConfErrors
     correctly and knows about the current cache_mode.
     """
+    non_sconf_nodes = set()
+
     def display(self, message):
         if sconf_global.logstream:
             sconf_global.logstream.write("scons: Configure: " + message + "\n")
@@ -238,8 +239,10 @@ class SConfBuildTask(SCons.Taskmaster.AlwaysTask):
         bi.
         """
         if not isinstance(bi, SConfBuildInfo):
-            SCons.Warnings.warn(SConfWarning,
-              "The stored build information has an unexpected class: %s" % bi.__class__)
+            SCons.Warnings.warn(
+                SConfWarning,
+                "The stored build information has an unexpected class: %s" % bi.__class__
+            )
         else:
             self.display("The original builder output was:\n" +
                          ("  |" + str(bi.string)).replace("\n", "\n  |"))
@@ -375,6 +378,25 @@ class SConfBuildTask(SCons.Taskmaster.AlwaysTask):
                     sconsign.set_entry(t.name, sconsign_entry)
                     sconsign.merge()
 
+    def make_ready_current(self):
+        # We're overriding make_ready_current() call to add to the list
+        # of nodes used by this task, filtering out any nodes created
+        # by the checker for it's own purpose.
+        self.non_sconf_nodes.update([t for t in self.targets if not t.is_conftest()])
+        super().make_ready_current()
+    make_ready = make_ready_current
+
+    def postprocess(self):
+        # We're done executing this task, so now we'll go through all the
+        # nodes used by this task which aren't nodes created for
+        # Configure checkers, but rather are existing or built files
+        # and reset their node info.
+        # If we do not reset their node info, any changes in these
+        # nodes will not trigger builds in the normal build process
+        for node in self.non_sconf_nodes:
+            node.ninfo = node.new_ninfo()
+        super().postprocess()
+
 class SConfBase:
     """This is simply a class to represent a configure context. After
     creating a SConf object, you can call any tests. After finished with your
@@ -449,6 +471,7 @@ class SConfBase:
                  'CheckFunc'          : CheckFunc,
                  'CheckType'          : CheckType,
                  'CheckTypeSize'      : CheckTypeSize,
+                 'CheckMember'        : CheckMember,
                  'CheckDeclaration'   : CheckDeclaration,
                  'CheckHeader'        : CheckHeader,
                  'CheckCHeader'       : CheckCHeader,
@@ -513,13 +536,14 @@ class SConfBase:
         # the engine assumes the current path is the SConstruct directory ...
         old_fs_dir = SConfFS.getcwd()
         old_os_dir = os.getcwd()
-        SConfFS.chdir(SConfFS.Top, change_os_dir=1)
+        SConfFS.chdir(SConfFS.Top, change_os_dir=True)
 
         # Because we take responsibility here for writing out our
         # own .sconsign info (see SConfBuildTask.execute(), above),
         # we override the store_info() method with a null place-holder
         # so we really control how it gets written.
         for n in nodes:
+            _set_conftest_node(n)
             n.store_info = 0
             if not hasattr(n, 'attributes'):
                 n.attributes = SCons.Node.Node.Attrs()
@@ -532,6 +556,7 @@ class SConfBase:
                 for c in n.children(scan=False):
                     # Keep debug code here.
                     # print("Checking [%s] for builders and then setting keep_targetinfo"%c)
+                    _set_conftest_node(c)
                     if  c.has_builder():
                         n.store_info = 0
                         if not hasattr(c, 'attributes'):
@@ -547,7 +572,7 @@ class SConfBase:
             SConfFS.set_max_drift(0)
             tm = SCons.Taskmaster.Taskmaster(nodes, SConfBuildTask)
             # we don't want to build tests in parallel
-            jobs = SCons.Job.Jobs(1, tm )
+            jobs = SCons.Taskmaster.Job.Jobs(1, tm)
             jobs.run()
             for n in nodes:
                 state = n.get_state()
@@ -558,7 +583,7 @@ class SConfBase:
         finally:
             SConfFS.set_max_drift(save_max_drift)
             os.chdir(old_os_dir)
-            SConfFS.chdir(old_fs_dir, change_os_dir=0)
+            SConfFS.chdir(old_fs_dir, change_os_dir=False)
             if self.logstream is not None:
                 # restore stdout / stderr
                 sys.stdout = oldStdout
@@ -596,39 +621,43 @@ class SConfBase:
 
         nodesToBeBuilt = []
         sourcetext = self.env.Value(text)
+        _set_conftest_node(sourcetext)
         f = "conftest"
 
         if text is not None:
-            textSig = SCons.Util.MD5signature(sourcetext)
+            textSig = SCons.Util.hash_signature(sourcetext)
             textSigCounter = str(_ac_build_counter[textSig])
             _ac_build_counter[textSig] += 1
 
             f = "_".join([f, textSig, textSigCounter])
             textFile = self.confdir.File(f + extension)
+            _set_conftest_node(textFile)
             textFileNode = self.env.SConfSourceBuilder(target=textFile,
                                                        source=sourcetext)
             nodesToBeBuilt.extend(textFileNode)
 
             source = textFile
             target = textFile.File(f + "SConfActionsContentDummyTarget")
+            _set_conftest_node(target)
         else:
             source = None
             target = None
 
         action = builder.builder.action.get_contents(target=target, source=[source], env=self.env)
-        actionsig = SCons.Util.MD5signature(action)
+        actionsig = SCons.Util.hash_signature(action)
         f = "_".join([f, actionsig])
 
         pref = self.env.subst( builder.builder.prefix )
         suff = self.env.subst( builder.builder.suffix )
         target = self.confdir.File(pref + f + suff)
+        _set_conftest_node(target)
 
         try:
             # Slide our wrapper into the construction environment as
             # the SPAWN function.
             self.env['SPAWN'] = self.pspawn_wrapper
 
-            nodes = builder(target = target, source = source)
+            nodes = builder(target = target, source = source, SCONF_NODE=True)
             if not SCons.Util.is_List(nodes):
                 nodes = [nodes]
             nodesToBeBuilt.extend(nodes)
@@ -764,7 +793,7 @@ class SConfBase:
 
             tb = traceback.extract_stack()[-3-self.depth]
             old_fs_dir = SConfFS.getcwd()
-            SConfFS.chdir(SConfFS.Top, change_os_dir=0)
+            SConfFS.chdir(SConfFS.Top, change_os_dir=False)
             self.logstream.write('file %s,line %d:\n\tConfigure(confdir = %s)\n' %
                                  (tb[0], tb[1], str(self.confdir)) )
             SConfFS.chdir(old_fs_dir)
@@ -915,14 +944,20 @@ class CheckContext:
         st, out = self.TryRun(text, ext)
         return not st, out
 
-    def AppendLIBS(self, lib_name_list):
+    def AppendLIBS(self, lib_name_list, unique=False):
         oldLIBS = self.env.get( 'LIBS', [] )
-        self.env.Append(LIBS = lib_name_list)
+        if unique:
+            self.env.AppendUnique(LIBS = lib_name_list)
+        else:
+            self.env.Append(LIBS = lib_name_list)
         return oldLIBS
 
-    def PrependLIBS(self, lib_name_list):
+    def PrependLIBS(self, lib_name_list, unique=False):
         oldLIBS = self.env.get( 'LIBS', [] )
-        self.env.Prepend(LIBS = lib_name_list)
+        if unique:
+            self.env.PrependUnique(LIBS = lib_name_list)
+        else:
+            self.env.Prepend(LIBS = lib_name_list)
         return oldLIBS
 
     def SetLIBS(self, val):
@@ -984,6 +1019,13 @@ def CheckDeclaration(context, declaration, includes = "", language = None):
                                           language = language)
     context.did_show_result = 1
     return not res
+
+def CheckMember(context, aggregate_member, header = None, language = None):
+    '''Returns the status (False : failed, True : ok).'''
+    res = SCons.Conftest.CheckMember(context, aggregate_member, header=header, language=language)
+    context.did_show_result = 1
+    return not res
+
 
 def createIncludesFromHeaders(headers, leaveLast, include_quotes = '""'):
     # used by CheckHeader and CheckLibWithHeader to produce C - #include
@@ -1052,7 +1094,8 @@ def CheckCXXHeader(context, header, include_quotes = '""'):
 
 
 def CheckLib(context, library = None, symbol = "main",
-             header = None, language = None, autoadd = 1):
+             header = None, language = None, autoadd=True,
+             append=True, unique=False) -> bool:
     """
     A test for a library. See also CheckLibWithHeader.
     Note that library may also be None to test whether the given symbol
@@ -1067,15 +1110,16 @@ def CheckLib(context, library = None, symbol = "main",
 
     # ToDo: accept path for the library
     res = SCons.Conftest.CheckLib(context, library, symbol, header = header,
-                                        language = language, autoadd = autoadd)
-    context.did_show_result = 1
+                                        language = language, autoadd = autoadd,
+                                        append=append, unique=unique)
+    context.did_show_result = True
     return not res
 
 # XXX
 # Bram: Can only include one header and can't use #ifdef HAVE_HEADER_H.
 
 def CheckLibWithHeader(context, libs, header, language,
-                       call = None, autoadd = 1):
+                       call = None, autoadd=True, append=True, unique=False) -> bool:
     # ToDo: accept path for library. Support system header files.
     """
     Another (more sophisticated) test for a library.
@@ -1084,8 +1128,7 @@ def CheckLibWithHeader(context, libs, header, language,
     As in CheckLib, we support library=None, to test if the call compiles
     without extra link flags.
     """
-    prog_prefix, dummy = \
-                 createIncludesFromHeaders(header, 0)
+    prog_prefix, dummy = createIncludesFromHeaders(header, 0)
     if not libs:
         libs = [None]
 
@@ -1093,7 +1136,8 @@ def CheckLibWithHeader(context, libs, header, language,
         libs = [libs]
 
     res = SCons.Conftest.CheckLib(context, libs, None, prog_prefix,
-            call = call, language = language, autoadd = autoadd)
+            call = call, language = language, autoadd=autoadd,
+            append=append, unique=unique)
     context.did_show_result = 1
     return not res
 

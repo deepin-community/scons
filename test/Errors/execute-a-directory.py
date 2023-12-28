@@ -25,7 +25,6 @@
 __revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os
-import sys
 
 import TestSCons
 
@@ -65,7 +64,7 @@ scons: \\*\\*\\* \\[%s\\] Error 1
 """
 
 cannot_execute = """\
-(sh: )*.+: cannot execute( \\[Is a directory\\])?
+(sh: )*.+: cannot execute(( -)? \\[?Is a directory\\]?)?
 scons: \\*\\*\\* \\[%s\\] Error %s
 """
 

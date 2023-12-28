@@ -1,5 +1,28 @@
+# MIT License
+#
+# Copyright The SCons Foundation
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 """
-TestSCons_time.py:  a testing framework for the scons-test.py script
+A testing framework for the scons-time.py script
 
 A TestSCons_time environment object is created via the usual invocation:
 
@@ -10,10 +33,6 @@ of TestCmd), and hence has available all of the methods and attributes
 from those classes, as well as any overridden or additional methods or
 attributes defined in this subclass.
 """
-
-# __COPYRIGHT__
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os
 import os.path
@@ -54,8 +73,7 @@ with open('SConstruct', 'r') as f:
 exec(script)
 """
 
-svn_py = """\
-#!/usr/bin/env python
+svn_py = f"""#!/usr/bin/env python
 import os
 import sys
 
@@ -63,12 +81,11 @@ dir = sys.argv[-1]
 script_dir = dir + '/scripts'
 os.makedirs(script_dir)
 with open(script_dir + '/scons.py', 'w') as f:
-    f.write(r'''%s''')
-""" % scons_py
+    f.write(r'''{scons_py}''')
+"""
 
 
-git_py = """\
-#!/usr/bin/env python
+git_py = f"""#!/usr/bin/env python
 import os
 import sys
 
@@ -76,8 +93,8 @@ dir = sys.argv[-1]
 script_dir = dir + '/scripts'
 os.makedirs(script_dir)
 with open(script_dir + '/scons.py', 'w') as f:
-    f.write(r'''%s''')
-""" % scons_py
+    f.write(r'''{scons_py}''')
+"""
 
 
 logfile_contents = """\
@@ -180,7 +197,7 @@ class TestSCons_time(TestCommon):
         if 'workdir' not in kw:
             kw['workdir'] = ''
 
-        TestCommon.__init__(self, **kw)
+        super().__init__(**kw)
 
     def archive_split(self, path):
         if path[-7:] == '.tar.gz':
@@ -224,7 +241,7 @@ class TestSCons_time(TestCommon):
         args = (tempdir, 'scons-time-',) + args
         x = os.path.join(*args)
         x = re.escape(x)
-        x = x.replace('time\\-', 'time\\-[^%s]*' % sep)
+        x = x.replace('time\\-', f'time\\-[^{sep}]*')
         return x
 
     def write_fake_scons_py(self):
@@ -258,13 +275,9 @@ class TestSCons_time(TestCommon):
         import shutil
         try:
             import tarfile
-
         except ImportError:
-
-            self.skip_test('no tarfile module\n')
-
+            self.skip_test('no tarfile module\n', from_framework=True)
         else:
-
             base, suffix = self.archive_split(archive)
 
             mode = {

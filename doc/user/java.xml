@@ -2,7 +2,7 @@
 <!DOCTYPE sconsdoc [
     <!ENTITY % scons SYSTEM "../scons.mod">
     %scons;
-    
+
     <!ENTITY % builders-mod SYSTEM "../generated/builders.mod">
     %builders-mod;
     <!ENTITY % functions-mod SYSTEM "../generated/functions.mod">
@@ -20,28 +20,9 @@
 <title>Java Builds</title>
 
 <!--
+SPDX-License-Identifier: MIT
 
-  __COPYRIGHT__
-
-  Permission is hereby granted, free of charge, to any person obtaining
-  a copy of this software and associated documentation files (the
-  "Software"), to deal in the Software without restriction, including
-  without limitation the rights to use, copy, modify, merge, publish,
-  distribute, sublicense, and/or sell copies of the Software, and to
-  permit persons to whom the Software is furnished to do so, subject to
-  the following conditions:
-
-  The above copyright notice and this permission notice shall be included
-  in all copies or substantial portions of the Software.
-
-  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
-  KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-  WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+Copyright The SCons Foundation
 -->
 
   <para>
@@ -206,7 +187,7 @@ public class AdditionalClass3
 
     Will not only tell you reliably
     that the <filename>.class</filename> files
-    in the <filename>classes</filename> subdirectory 
+    in the <filename>classes</filename> subdirectory
     are up-to-date:
 
     </para>
@@ -250,7 +231,7 @@ public class AdditionalClass3
     variable to specify the version in use.  With Java 1.6, the
     one-liner example can then be defined like this:
 
-    </para> 
+    </para>
 
     <sconstruct>
 Java('classes', 'src', JAVAVERSION='1.6')
@@ -270,7 +251,7 @@ Java('classes', 'src', JAVAVERSION='1.6')
     After building the class files,
     it's common to collect them into
     a Java archive (<filename>.jar</filename>) file,
-    which you do by calling the &b-link-Jar; Builder method.
+    which you do by calling the &b-link-Jar; Builder.
     If you want to just collect all of the
     class files within a subdirectory,
     you can just specify that subdirectory
@@ -280,8 +261,8 @@ Java('classes', 'src', JAVAVERSION='1.6')
 
     <scons_example name="java_jar1">
       <file name="SConstruct" printme="1">
-Java(target = 'classes', source = 'src')
-Jar(target = 'test.jar', source = 'classes')
+Java(target='classes', source='src')
+Jar(target='test.jar', source='classes')
       </file>
       <file name="src/Example1.java">
 public class Example1
@@ -344,10 +325,10 @@ public class Example3
 
     <scons_example name="java_jar2">
       <file name="SConstruct" printme="1">
-prog1_class_files = Java(target = 'classes', source = 'prog1')
-prog2_class_files = Java(target = 'classes', source = 'prog2')
-Jar(target = 'prog1.jar', source = prog1_class_files)
-Jar(target = 'prog2.jar', source = prog2_class_files)
+prog1_class_files = Java(target='classes', source='prog1')
+prog2_class_files = Java(target='classes', source='prog2')
+Jar(target='prog1.jar', source=prog1_class_files)
+Jar(target='prog2.jar', source=prog2_class_files)
       </file>
       <file name="prog1/Example1.java">
 public class Example1
@@ -418,8 +399,8 @@ public class Example4
 
     <scons_example name="java_javah">
       <file name="SConstruct" printme="1">
-classes = Java(target = 'classes', source = 'src/pkg/sub')
-JavaH(target = 'native', source = classes)
+classes = Java(target='classes', source='src/pkg/sub')
+JavaH(target='native', source=classes)
       </file>
       <file name="src/pkg/sub/Example1.java">
 package pkg.sub;
@@ -488,8 +469,8 @@ public class Example3
 
     Although it's more convenient to use
     the list of class files returned by
-    the &b-Java; Builder
-    as the source of a call to the &b-JavaH; Builder,
+    the &b-link-Java; Builder
+    as the source of a call to the &b-link-JavaH; Builder,
     you <emphasis>can</emphasis>
     specify the list of class files
     by hand, if you prefer.
@@ -502,11 +483,13 @@ public class Example3
 
     <scons_example name="java_JAVACLASSDIR">
       <file name="SConstruct" printme="1">
-Java(target = 'classes', source = 'src/pkg/sub')
-class_file_list = ['classes/pkg/sub/Example1.class',
-                   'classes/pkg/sub/Example2.class',
-                   'classes/pkg/sub/Example3.class']
-JavaH(target = 'native', source = class_file_list, JAVACLASSDIR = 'classes')
+Java(target='classes', source='src/pkg/sub')
+class_file_list = [
+    'classes/pkg/sub/Example1.class',
+    'classes/pkg/sub/Example2.class',
+    'classes/pkg/sub/Example3.class',
+]
+JavaH(target='native', source=class_file_list, JAVACLASSDIR='classes')
       </file>
       <file name="src/pkg/sub/Example1.java">
 package pkg.sub;
@@ -560,8 +543,8 @@ public class Example3
 
     <scons_example name="java_javah_file">
       <file name="SConstruct" printme="1">
-classes = Java(target = 'classes', source = 'src/pkg/sub')
-JavaH(target = File('native.h'), source = classes)
+classes = Java(target='classes', source='src/pkg/sub')
+JavaH(target=File('native.h'), source=classes)
       </file>
       <file name="src/pkg/sub/Example1.java">
 package pkg.sub;
@@ -595,7 +578,7 @@ public class Example3
     <para>
 
     Because &SCons; assumes by default
-    that the target of the &b-JavaH; builder is a directory,
+    that the target of the &b-link-JavaH; builder is a directory,
     you need to use the &File; function
     to make sure that &SCons; doesn't
     create a directory named <filename>native.h</filename>.
@@ -608,6 +591,17 @@ public class Example3
     <scons_output example="java_javah_file" suffix="1">
       <scons_output_command>scons -Q</scons_output_command>
     </scons_output>
+
+    <para>
+
+    Note that the the <command>javah</command> command was
+    removed from the JDK as of JDK 10, and the approved method
+    (available since JDK 8) is to use <command>javac</command>
+    to generate native headers at the same time as the Java source
+    code is compiled..  As such the &b-link-JavaH; builder
+    is of limited utility in later Java versions.
+
+    </para>
 
   </section>
 
@@ -629,8 +623,8 @@ public class Example3
 
     <scons_example name="java_RMIC">
       <file name="SConstruct" printme="1">
-classes = Java(target = 'classes', source = 'src/pkg/sub')
-RMIC(target = 'outdir', source = classes)
+classes = Java(target='classes', source='src/pkg/sub')
+RMIC(target='outdir', source=classes)
       </file>
       <file name="src/pkg/sub/Example1.java">
 package pkg.sub;

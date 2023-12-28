@@ -1,14 +1,6 @@
-"""SCons.Platform.win32
-
-Platform-specific initialization for Win32 systems.
-
-There normally shouldn't be any need to import this module directly.  It
-will usually be imported through the generic SCons.Platform.Platform()
-selection method.
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,12 +20,17 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Platform-specific initialization for Win32 systems.
+
+There normally shouldn't be any need to import this module directly.  It
+will usually be imported through the generic SCons.Platform.Platform()
+selection method.
+"""
 
 import os
 import os.path
+import platform
 import sys
 import tempfile
 
@@ -46,22 +43,6 @@ import SCons.Util
 CHOCO_DEFAULT_PATH = [
     r'C:\ProgramData\chocolatey\bin'
 ]
-
-try:
-    import msvcrt
-    import win32api
-    import win32con
-except ImportError:
-    parallel_msg = \
-        "you do not seem to have the pywin32 extensions installed;\n" + \
-        "\tparallel (-j) builds may not work reliably with open Python files."
-except AttributeError:
-    parallel_msg = \
-        "your pywin32 extensions do not support file handle operations;\n" + \
-        "\tparallel (-j) builds may not work reliably with open Python files."
-else:
-    parallel_msg = None
-
 
 if False:
     # Now swap out shutil.filecopy and filecopy2 for win32 api native CopyFile
@@ -288,7 +269,6 @@ def get_program_files_dir():
             val, tok = SCons.Util.RegQueryValueEx(k, 'ProgramFilesDir')
         except SCons.Util.RegError:
             val = ''
-            pass
 
     if val == '':
         # A reasonable default if we can't read the registry
@@ -342,7 +322,7 @@ def get_architecture(arch=None):
         arch = os.environ.get('PROCESSOR_ARCHITEW6432')
         if not arch:
             arch = os.environ.get('PROCESSOR_ARCHITECTURE')
-    return SupportedArchitectureMap.get(arch, ArchDefinition('', ['']))
+    return SupportedArchitectureMap.get(arch, ArchDefinition(platform.machine(), [platform.machine()]))
 
 
 def generate(env):
@@ -401,7 +381,7 @@ def generate(env):
     # for SystemDrive because it's related.
     #
     # Weigh the impact carefully before adding other variables to this list.
-    import_env = ['SystemDrive', 'SystemRoot', 'TEMP', 'TMP' ]
+    import_env = ['SystemDrive', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE']
     for var in import_env:
         v = os.environ.get(var)
         if v:

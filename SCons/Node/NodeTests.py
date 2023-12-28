@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,14 +21,10 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
 import SCons.compat
 
 import collections
-import os
 import re
-import sys
 import unittest
 
 import SCons.Errors
@@ -163,7 +160,7 @@ class NoneBuilder(Builder):
 
 class ListBuilder(Builder):
     def __init__(self, *nodes):
-        Builder.__init__(self)
+        super().__init__()
         self.nodes = nodes
     def execute(self, target, source, env):
         if hasattr(self, 'status'):
@@ -203,7 +200,7 @@ class MyNode(SCons.Node.Node):
     simulate a real, functional Node subclass.
     """
     def __init__(self, name):
-        SCons.Node.Node.__init__(self)
+        super().__init__()
         self.name = name
         self.Tag('found_includes', [])
     def __str__(self):
@@ -584,7 +581,7 @@ class NodeTestCase(unittest.TestCase):
     def test_get_csig(self):
         """Test generic content signature calculation
         """
-        
+
         class TestNodeInfo(SCons.Node.NodeInfoBase):
             __slots__ = ('csig',)
         try:
@@ -595,7 +592,7 @@ class NodeTestCase(unittest.TestCase):
             node = SCons.Node.Node()
             node._func_get_contents = 4
             result = node.get_csig()
-            assert result == '550a141f12de6341fba65b0ad0433500', result
+            assert result in ('550a141f12de6341fba65b0ad0433500', '9a3e61b6bcc8abec08f195526c3132d5a4a98cc0', '3538a1ef2e113da64249eea7bd068b585ec7ce5df73b2d1e319d8c9bf47eb314'), result
         finally:
             SCons.Node.Node.NodeInfo = SCons.Node.NodeInfoBase
 
@@ -612,7 +609,7 @@ class NodeTestCase(unittest.TestCase):
             node = SCons.Node.Node()
             node._func_get_contents = 4
             result = node.get_cachedir_csig()
-            assert result == '15de21c670ae7c3f6f3f1f37029303c9', result
+            assert result in ('15de21c670ae7c3f6f3f1f37029303c9', 'cfa1150f1787186742a9a884b73a43d8cf219f9b', '91a73fd806ab2c005c13b4dc19130a884e909dea3f72d46e30266fe1a1f588d8'), result
         finally:
             SCons.Node.Node.NodeInfo = SCons.Node.NodeInfoBase
 
@@ -623,7 +620,7 @@ class NodeTestCase(unittest.TestCase):
             __slots__ = ('csig',)
         SCons.Node.Node.NodeInfo = TestNodeInfo
         node = SCons.Node.Node()
- 
+
         binfo = node.get_binfo()
         assert isinstance(binfo, SCons.Node.BuildInfoBase), binfo
 
@@ -1229,7 +1226,7 @@ class NodeTestCase(unittest.TestCase):
         """Test the get_string() method."""
         class TestNode(MyNode):
             def __init__(self, name, sig):
-                MyNode.__init__(self, name)
+                super().__init__(name)
                 self.sig = sig
 
             def for_signature(self):
@@ -1256,6 +1253,19 @@ class NodeTestCase(unittest.TestCase):
         SCons.Node.SConscriptNodes.add(n2)
         assert not n.is_sconscript()
         assert n2.is_sconscript()
+
+    def test_conftests(self):
+        """Test the is_conftest() function."""
+        # check nodes are not sconscript unless added to the list
+        n=SCons.Node.Node()
+        n2=SCons.Node.Node()
+        assert not n.is_conftest()
+        assert not n2.is_conftest()
+
+        # add node to sconscript list and verify
+        n2.attributes.conftest_node = 1
+        assert not n.is_conftest()
+        assert n2.is_conftest()
 
     def test_Annotate(self):
         """Test using an interface-specific Annotate function."""
@@ -1287,6 +1297,7 @@ class NodeTestCase(unittest.TestCase):
         n.includes = 'testincludes'
         n.Tag('found_includes', {'testkey':'testvalue'})
         n.implicit = 'testimplicit'
+        n.cached = 1
 
         x = MyExecutor()
         n.set_executor(x)
@@ -1294,6 +1305,7 @@ class NodeTestCase(unittest.TestCase):
         n.clear()
 
         assert n.includes is None, n.includes
+        assert n.cached == 0, n.cached
         assert x.cleaned_up
 
     def test_get_subst_proxy(self):

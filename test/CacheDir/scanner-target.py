@@ -31,8 +31,6 @@ to push the file to the CacheDir after the build signature had already
 been cleared (as a sign that the built file should now be rescanned).
 """
 
-import os.path
-import shutil
 
 import TestSCons
 
@@ -55,11 +53,9 @@ def sillyScanner(node, env, dirs):
     print('This is never called (unless we build file.out)')
     return []
 
-SillyScanner = SCons.Scanner.Base(function = sillyScanner, skeys = ['.res'])
+SillyScanner = SCons.Scanner.ScannerBase(function=sillyScanner, skeys=['.res'])
 
-env = Environment(tools=[],
-                  SCANNERS = [SillyScanner],
-                  BUILDERS = {})
+env = Environment(tools=[], SCANNERS=[SillyScanner], BUILDERS={})
 
 r = env.Command('file.res', 'file.ma', docopy)
 

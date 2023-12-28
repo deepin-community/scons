@@ -1,3 +1,26 @@
+# MIT License
+#
+# Copyright The SCons Foundation
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 """
 SCons.Builder
 
@@ -76,40 +99,16 @@ There are the following methods for internal use within this module:
 
 """
 
-#
-# __COPYRIGHT__
-#
-# Permission is hereby granted, free of charge, to any person obtaining
-# a copy of this software and associated documentation files (the
-# "Software"), to deal in the Software without restriction, including
-# without limitation the rights to use, copy, modify, merge, publish,
-# distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so, subject to
-# the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
-# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
 from collections import UserDict, UserList
 
 import SCons.Action
 import SCons.Debug
-from SCons.Debug import logInstanceCreation
-from SCons.Errors import InternalError, UserError
 import SCons.Executor
 import SCons.Memoize
 import SCons.Util
 import SCons.Warnings
+from SCons.Debug import logInstanceCreation
+from SCons.Errors import InternalError, UserError
 
 class _Null:
     pass
@@ -131,8 +130,8 @@ class DictCmdGenerator(SCons.Util.Selector):
     to return the proper action based on the file suffix of
     the source file."""
 
-    def __init__(self, dict=None, source_ext_match=1):
-        SCons.Util.Selector.__init__(self, dict)
+    def __init__(self, mapping=None, source_ext_match=True):
+        super().__init__(mapping)
         self.source_ext_match = source_ext_match
 
     def src_suffixes(self):
@@ -223,10 +222,11 @@ class OverrideWarner(UserDict):
     can actually invoke multiple builders.  This class only emits the
     warnings once, no matter how many Builders are invoked.
     """
-    def __init__(self, dict):
-        UserDict.__init__(self, dict)
+    def __init__(self, mapping):
+        super().__init__(mapping)
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Builder.OverrideWarner')
         self.already_warned = None
+
     def warn(self):
         if self.already_warned:
             return
@@ -246,7 +246,7 @@ def Builder(**kw):
         kw['action'] = SCons.Action.CommandGeneratorAction(kw['generator'], {})
         del kw['generator']
     elif 'action' in kw:
-        source_ext_match = kw.get('source_ext_match', 1)
+        source_ext_match = kw.get('source_ext_match', True)
         if 'source_ext_match' in kw:
             del kw['source_ext_match']
         if SCons.Util.is_Dict(kw['action']):
@@ -354,12 +354,20 @@ class EmitterProxy:
 
         return (target, source)
 
-
     def __eq__(self, other):
         return self.var == other.var
 
     def __lt__(self, other):
         return self.var < other.var
+
+    def __le__(self, other):
+        return self.var <= other.var
+
+    def __gt__(self, other):
+        return self.var > other.var
+
+    def __ge__(self, other):
+        return self.var >= other.var
 
 class BuilderBase:
     """Base class for Builders, objects that create output
@@ -431,11 +439,8 @@ class BuilderBase:
             src_builder = [ src_builder ]
         self.src_builder = src_builder
 
-    def __nonzero__(self):
-        raise InternalError("Do not test for the Node.builder attribute directly; use Node.has_builder() instead")
-
     def __bool__(self):
-        return self.__nonzero__()
+        raise InternalError("Do not test for the Node.builder attribute directly; use Node.has_builder() instead")
 
     def get_name(self, env):
         """Attempts to get the name of the Builder.
@@ -504,6 +509,7 @@ class BuilderBase:
                 splitext = lambda S: self.splitext(S,env)
                 tlist = [ t_from_s(pre, suf, splitext) ]
         else:
+            # orig_target = target
             target = self._adjustixes(target, pre, suf, self.ensure_suffix)
             tlist = env.arg2nodes(target, target_factory, target=target, source=source)
 
@@ -615,6 +621,10 @@ class BuilderBase:
             t.add_source(slist)
             t.set_executor(executor)
             t.set_explicit(self.is_explicit)
+
+        if env.get("SCONF_NODE"):
+            for node in tlist:
+                node.attributes.conftest_node = 1
 
         return SCons.Node.NodeList(tlist)
 
@@ -867,7 +877,7 @@ class CompositeBuilder(SCons.Util.Proxy):
 
     def __init__(self, builder, cmdgen):
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Builder.CompositeBuilder')
-        SCons.Util.Proxy.__init__(self, builder)
+        super().__init__(builder)
 
         # cmdgen should always be an instance of DictCmdGenerator.
         self.cmdgen = cmdgen

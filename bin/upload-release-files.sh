@@ -18,7 +18,7 @@ SF_TOPDIR='/home/frs/project/scons'
 # the build products are here:
 cd build/dist
 cp -f ../../CHANGES.txt ../../RELEASE.txt  .
-cp -f ../../README-sf.rst ./README.rst
+cp -f ../../README-SF.rst ./README.rst
 
 set -x
 
@@ -27,11 +27,11 @@ $RSYNC $RSYNCOPTS\
        README.rst \
        $SF_USER@$SF_MACHINE:$SF_TOPDIR/scons/
 
-	
+
 # Upload main scons release files:
 $RSYNC $RSYNCOPTS \
-  scons-$VERSION.tar.gz \
-  scons-$VERSION.zip \
+  SCons-$VERSION.tar.gz \
+  SCons-$VERSION.zip \
   CHANGES.txt RELEASE.txt \
   $SF_USER@$SF_MACHINE:$SF_TOPDIR/scons/$VERSION/
 
@@ -39,6 +39,7 @@ $RSYNC $RSYNCOPTS \
 $RSYNC $RSYNCOPTS \
   scons-local-$VERSION.tar.gz \
   scons-local-$VERSION.zip \
+  scons-local-$VERSION.pyz \
   CHANGES.txt RELEASE.txt \
   $SF_USER@$SF_MACHINE:$SF_TOPDIR/scons-local/$VERSION/
 

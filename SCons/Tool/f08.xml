@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-__COPYRIGHT__
+Copyright The SCons Foundation
 
 This file is processed by the bin/SConsDoc.py module.
 See its __doc__ string for a discussion of the format.
@@ -45,6 +45,7 @@ Set construction variables for generic POSIX Fortran 08 compilers.
 <item>F08PPCOMSTR</item>
 <item>SHF08COMSTR</item>
 <item>SHF08PPCOMSTR</item>
+<item>FORTRANCOMMONFLAGS</item>
 </uses>
 </tool>
 
@@ -89,7 +90,7 @@ If not set, then &cv-link-F08COM; or &cv-link-FORTRANCOM;
 <summary>
 <para>
 The list of file extensions for which the F08 dialect will be used. By
-default, this is ['.f08']
+default, this is <literal>['.f08']</literal>
 </para>
 </summary>
 </cvar>
@@ -98,7 +99,7 @@ default, this is ['.f08']
 <summary>
 <para>
 The list of file extensions for which the compilation + preprocessor pass for
-F08 dialect will be used. By default, this is empty
+F08 dialect will be used. By default, this is empty.
 </para>
 </summary>
 </cvar>
@@ -271,7 +272,7 @@ Options that are passed to the Fortran 08 compiler
 to generated shared-library objects.
 You only need to set &cv-link-SHF08FLAGS; if you need to define specific
 user options for Fortran 08 files.
-You should normally set the &cv-link-SHFORTRANFLAGS; variable,
+You should normally set the &cv-link-FORTRANCOMMONFLAGS; variable,
 which specifies the user-specified options
 passed to the default Fortran compiler
 for all Fortran versions.

@@ -1,14 +1,6 @@
-"""SCons.Scanner.D
-
-Scanner for the Digital Mars "D" programming language.
-
-Coded by Andy Friesen
-17 Nov 2003
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,25 +20,27 @@ Coded by Andy Friesen
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Scanner for the Digital Mars "D" programming language.
 
-import SCons.Scanner
+Coded by Andy Friesen, 17 Nov 2003
+"""
+
+import SCons.Node.FS
+from . import Classic
 
 def DScanner():
     """Return a prototype Scanner instance for scanning D source files"""
     ds = D()
     return ds
 
-class D(SCons.Scanner.Classic):
-    def __init__ (self):
-        SCons.Scanner.Classic.__init__ (
-            self,
-            name = "DScanner",
-            suffixes = '$DSUFFIXES',
-            path_variable = 'DPATH',
-            regex = r'(?:import\s+)([\w\s=,.]+)(?:\s*:[\s\w,=]+)?(?:;)'
+class D(Classic):
+    def __init__(self):
+        super().__init__(
+            name="DScanner",
+            suffixes='$DSUFFIXES',
+            path_variable='DPATH',
+            regex=r'(?:import\s+)([\w\s=,.]+)(?:\s*:[\s\w,=]+)?(?:;)',
         )
 
     def find_include(self, include, source_dir, path):
@@ -55,7 +49,7 @@ class D(SCons.Scanner.Classic):
 
         i = SCons.Node.FS.find_file(inc + '.d', (source_dir,) + path)
         if i is None:
-            i = SCons.Node.FS.find_file (inc + '.di', (source_dir,) + path)
+            i = SCons.Node.FS.find_file(inc + '.di', (source_dir,) + path)
         return i, include
 
     def find_include_names(self, node):

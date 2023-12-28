@@ -1,12 +1,6 @@
-"""SCons.Executor
-
-A module for executing actions with specific lists of target and source
-Nodes.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -26,16 +20,17 @@ Nodes.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""Execute actions with specific lists of target and source Nodes."""
 
 import collections
 
-import SCons.Debug
-from SCons.Debug import logInstanceCreation
 import SCons.Errors
 import SCons.Memoize
 import SCons.Util
 from SCons.compat import NoSlotsPyPy
+import SCons.Debug
+from SCons.Debug import logInstanceCreation
 
 class Batch:
     """Remembers exact association between targets
@@ -68,10 +63,6 @@ class TSList(collections.UserList):
     def __getitem__(self, i):
         nl = self.func()
         return nl[i]
-    def __getslice__(self, i, j):
-        nl = self.func()
-        i, j = max(i, 0), max(j, 0)
-        return nl[i:j]
     def __str__(self):
         nl = self.func()
         return str(nl)
@@ -279,10 +270,8 @@ class Executor(object, metaclass=NoSlotsPyPy):
         return self.get_lvars()[targets_string]
 
     def set_action_list(self, action):
-        import SCons.Util
         if not SCons.Util.is_List(action):
             if not action:
-                import SCons.Errors
                 raise SCons.Errors.UserError("Executor must have an action.")
             action = [action]
         self.action_list = action
@@ -317,30 +306,30 @@ class Executor(object, metaclass=NoSlotsPyPy):
         over and over), so removing the duplicates once up front should
         save the Taskmaster a lot of work.
         """
-        result = SCons.Util.UniqueList([])
+        result = []
         for target in self.get_all_targets():
             result.extend(target.children())
-        return result
+        return SCons.Util.uniquer_hashables(result)
 
     def get_all_prerequisites(self):
         """Returns all unique (order-only) prerequisites for all batches
         of this Executor.
         """
-        result = SCons.Util.UniqueList([])
+        result = []
         for target in self.get_all_targets():
             if target.prerequisites is not None:
                 result.extend(target.prerequisites)
-        return result
+        return SCons.Util.uniquer_hashables(result)
 
     def get_action_side_effects(self):
 
         """Returns all side effects for all batches of this
         Executor used by the underlying Action.
         """
-        result = SCons.Util.UniqueList([])
+        result = []
         for target in self.get_action_targets():
             result.extend(target.side_effects)
-        return result
+        return SCons.Util.uniquer_hashables(result)
 
     @SCons.Memoize.CountMethodCall
     def get_build_env(self):

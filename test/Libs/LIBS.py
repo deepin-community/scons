@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,22 +22,22 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import TestSCons
 import sys
 
+import TestSCons
+
+# Leave below to resolve sider complaints
+_exe = TestSCons._exe
+lib_ = TestSCons.lib_
+_lib = TestSCons._lib
+
 if sys.platform == 'win32':
-    _exe = '.exe'
-    bar_lib = 'bar.lib'
     import SCons.Tool.MSCommon as msc
     if not msc.msvc_exists():
-        bar_lib = 'libbar.a'
-else:
-    _exe = ''
-    bar_lib = 'libbar.a'
+        _lib = '.a'
+        lib_ = 'lib'
+bar_lib = lib_ + 'bar' + _lib
 
 test = TestSCons.TestSCons()
 
@@ -49,6 +51,7 @@ foo5_exe = test.workpath('foo5' + _exe)
 slprog_exe = test.workpath('slprog' + _exe)
 
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(LIBS=['bar'], LIBPATH = '.')
 env.Program(target='foo1', source='foo1.c')
 env2 = Environment(LIBS=[File(r'%s')], LIBPATH = '.')
@@ -97,6 +100,7 @@ test.write('foo5.c', foo_contents)
 
 test.write('sl.c', """\
 #include <stdio.h>
+
 void
 sl(void)
 {
@@ -105,7 +109,11 @@ sl(void)
 """)
 
 test.write('slprog.c', """\
+#include <stdlib.h>
 #include <stdio.h>
+
+void sl(void);
+
 int
 main(int argc, char *argv[])
 {
@@ -154,6 +162,7 @@ test.run(program=slprog_exe, stdout='sl.c\nslprog.c\n')
 
 #
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(LIBS=['baz'])
 env.Program(target='foo1', source='foo1.c', LIBS=['$LIBS', 'bar'], LIBPATH = '.')
 SConscript('sub1/SConscript', 'env')
@@ -166,6 +175,7 @@ test.run(program=foo1_exe, stdout='sub1/bar.c\nsub2/baz.c\n')
 
 #
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(LIBS=['bar', 'baz'], LIBPATH = '.')
 env.Program(target='foo1', source='foo1.c')
 SConscript('sub1/SConscript', 'env')
@@ -184,6 +194,7 @@ test.run(program=foo1_exe, stdout='sub1/bar.c\nsub1/baz.c\n')
 
 #
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment()
 env.Program(target='foo1', source='foo1.c', LIBS=['bar', 'baz'], LIBPATH = '.')
 SConscript('sub1/SConscript', 'env')

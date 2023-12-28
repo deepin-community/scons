@@ -1,6 +1,28 @@
+# MIT License
+#
+# Copyright The SCons Foundation
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 """
-TestSConsMSVS.py:  a testing framework for the SCons software construction
-tool.
+A testing framework for the SCons software construction tool.
 
 A TestSConsMSVS environment object is created via the usual invocation:
 
@@ -13,10 +35,6 @@ as well as any overridden or additional methods or attributes defined
 in this subclass.
 """
 
-# __COPYRIGHT__
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
 import os
 import sys
 import platform
@@ -26,7 +44,6 @@ from xml.etree import ElementTree
 import SCons.Errors
 from TestSCons import *
 from TestSCons import __all__
-
 
 
 expected_dspfile_6_0 = '''\
@@ -638,7 +655,7 @@ def get_tested_proj_file_vc_versions():
     """
     Returns all MSVC versions that we want to test project file creation for.
     """
-    return ['8.0', '9.0', '10.0', '11.0', '12.0', '14.0', '14.1', '14.2']
+    return ['8.0', '9.0', '10.0', '11.0', '12.0', '14.0', '14.1', '14.2', '14.3']
 
 
 class TestSConsMSVS(TestSCons):
@@ -673,7 +690,7 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         orig = 'sys.path = [ join(sys'
 
         enginepath = repr(os.path.join(self._cwd, '..', 'engine'))
-        replace = 'sys.path = [ %s, join(sys' % enginepath
+        replace = f'sys.path = [ {enginepath}, join(sys'
 
         contents = self.read(fname, mode='r')
         contents = contents.replace(orig, replace)
@@ -702,9 +719,9 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
             project_guid = "{B0CC4EE9-0174-51CD-A06A-41D0713E928A}"
 
         if 'SCONS_LIB_DIR' in os.environ:
-            exec_script_main = "from os.path import join; import sys; sys.path = [ r'%s' ] + sys.path; import SCons.Script; SCons.Script.main()" % os.environ['SCONS_LIB_DIR']
+            exec_script_main = f"from os.path import join; import sys; sys.path = [ r'{os.environ['SCONS_LIB_DIR']}' ] + sys.path; import SCons.Script; SCons.Script.main()"
         else:
-            exec_script_main = "from os.path import join; import sys; sys.path = [ join(sys.prefix, 'Lib', 'site-packages', 'scons-%s'), join(sys.prefix, 'scons-%s'), join(sys.prefix, 'Lib', 'site-packages', 'scons'), join(sys.prefix, 'scons') ] + sys.path; import SCons.Script; SCons.Script.main()" % (self.scons_version, self.scons_version)
+            exec_script_main = f"from os.path import join; import sys; sys.path = [ join(sys.prefix, 'Lib', 'site-packages', 'scons-{self.scons_version}'), join(sys.prefix, 'scons-{self.scons_version}'), join(sys.prefix, 'Lib', 'site-packages', 'scons'), join(sys.prefix, 'scons') ] + sys.path; import SCons.Script; SCons.Script.main()"
         exec_script_main_xml = exec_script_main.replace("'", "&apos;")
 
         result = input.replace(r'<WORKPATH>', workpath)
@@ -746,8 +763,7 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         return result
 
     def get_vs_host_arch(self):
-        """ Get an MSVS, SDK , and/or MSVS acceptable platform arch
-        """
+        """ Returns an MSVS, SDK , and/or MSVS acceptable platform arch. """
 
         # Dict to 'canonalize' the arch
         _ARCH_TO_CANONICAL = {
@@ -761,11 +777,6 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         }
 
         host_platform = platform.machine()
-        # TODO(2.5):  the native Python platform.machine() function returns
-        # '' on all Python versions before 2.6, after which it also uses
-        # PROCESSOR_ARCHITECTURE.
-        if not host_platform:
-            host_platform = os.environ.get('PROCESSOR_ARCHITECTURE', '')
 
         try:
             host = _ARCH_TO_CANONICAL[host_platform]
@@ -812,7 +823,7 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         elif major > 10:
             return '12.00'
         else:
-            raise SCons.Errors.UserError('Received unexpected VC version %s' % vc_version)
+            raise SCons.Errors.UserError(f'Received unexpected VC version {vc_version}')
 
     def _get_solution_file_vs_number(self, vc_version):
         """
@@ -835,7 +846,7 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         elif major == 14 and minor == 2:
             return '16'
         else:
-            raise SCons.Errors.UserError('Received unexpected VC version %s' % vc_version)
+            raise SCons.Errors.UserError(f'Received unexpected VC version {vc_version}')
 
     def _get_vcxproj_file_tools_version(self, vc_version):
         """
@@ -862,8 +873,11 @@ print("self._msvs_versions =%%s"%%str(SCons.Tool.MSCommon.query_versions()))
         elif vc_version == '14.2':
             # ToolsVersion='16'
             return '16.0'
+        elif vc_version == '14.3':
+            # ToolsVersion='17'
+            return '17.0'
         else:
-            raise SCons.Errors.UserError('Received unexpected VC version %s' % vc_version)
+            raise SCons.Errors.UserError(f'Received unexpected VC version {vc_version}')
 
     def _get_vcxproj_file_cpp_path(self, dirs):
         """Returns the include paths expected in the .vcxproj file"""

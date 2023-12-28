@@ -1,9 +1,6 @@
-"""SCons.Conftest
-
-Autoconf-like configuration support; low level implementation of tests.
-"""
-
+# MIT License
 #
+# Copyright The SCons Foundation
 # Copyright (c) 2003 Stichting NLnet Labs
 # Copyright (c) 2001, 2002, 2003 Steven Knight
 #
@@ -25,80 +22,72 @@ Autoconf-like configuration support; low level implementation of tests.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-#
-# The purpose of this module is to define how a check is to be performed.
-# Use one of the Check...() functions below.
-#
+r"""Autoconf-like configuration support
 
-#
-# A context class is used that defines functions for carrying out the tests,
-# logging and messages.  The following methods and members must be present:
-#
-# context.Display(msg)  Function called to print messages that are normally
-#                       displayed for the user.  Newlines are explicitly used.
-#                       The text should also be written to the logfile!
-#
-# context.Log(msg)      Function called to write to a log file.
-#
-# context.BuildProg(text, ext)
-#                       Function called to build a program, using "ext" for the
-#                       file extention.  Must return an empty string for
-#                       success, an error message for failure.
-#                       For reliable test results building should be done just
-#                       like an actual program would be build, using the same
-#                       command and arguments (including configure results so
-#                       far).
-#
-# context.CompileProg(text, ext)
-#                       Function called to compile a program, using "ext" for
-#                       the file extention.  Must return an empty string for
-#                       success, an error message for failure.
-#                       For reliable test results compiling should be done just
-#                       like an actual source file would be compiled, using the
-#                       same command and arguments (including configure results
-#                       so far).
-#
-# context.AppendLIBS(lib_name_list)
-#                       Append "lib_name_list" to the value of LIBS.
-#                       "lib_namelist" is a list of strings.
-#                       Return the value of LIBS before changing it (any type
-#                       can be used, it is passed to SetLIBS() later.)
-#
-# context.PrependLIBS(lib_name_list)
-#                       Prepend "lib_name_list" to the value of LIBS.
-#                       "lib_namelist" is a list of strings.
-#                       Return the value of LIBS before changing it (any type
-#                       can be used, it is passed to SetLIBS() later.)
-#
-# context.SetLIBS(value)
-#                       Set LIBS to "value".  The type of "value" is what
-#                       AppendLIBS() returned.
-#                       Return the value of LIBS before changing it (any type
-#                       can be used, it is passed to SetLIBS() later.)
-#
-# context.headerfilename
-#                       Name of file to append configure results to, usually
-#                       "confdefs.h".
-#                       The file must not exist or be empty when starting.
-#                       Empty or None to skip this (some tests will not work!).
-#
-# context.config_h      (may be missing). If present, must be a string, which
-#                       will be filled with the contents of a config_h file.
-#
-# context.vardict       Dictionary holding variables used for the tests and
-#                       stores results from the tests, used for the build
-#                       commands.
-#                       Normally contains "CC", "LIBS", "CPPFLAGS", etc.
-#
-# context.havedict      Dictionary holding results from the tests that are to
-#                       be used inside a program.
-#                       Names often start with "HAVE_".  These are zero
-#                       (feature not present) or one (feature present).  Other
-#                       variables may have any value, e.g., "PERLVERSION" can
-#                       be a number and "SYSTEMNAME" a string.
-#
+The purpose of this module is to define how a check is to be performed.
+
+A context class is used that defines functions for carrying out the tests,
+logging and messages.  The following methods and members must be present:
+
+context.Display(msg)
+    Function called to print messages that are normally displayed
+    for the user.  Newlines are explicitly used.  The text should
+    also be written to the logfile!
+
+context.Log(msg)
+    Function called to write to a log file.
+
+context.BuildProg(text, ext)
+    Function called to build a program, using "ext" for the file
+    extension.  Must return an empty string for success, an error
+    message for failure.  For reliable test results building should
+    be done just like an actual program would be build, using the
+    same command and arguments (including configure results so far).
+
+context.CompileProg(text, ext)
+    Function called to compile a program, using "ext" for the file
+    extension.  Must return an empty string for success, an error
+    message for failure.  For reliable test results compiling should be
+    done just like an actual source file would be compiled, using the
+    same command and arguments (including configure results so far).
+
+context.AppendLIBS(lib_name_list)
+    Append "lib_name_list" to the value of LIBS.  "lib_namelist" is
+    a list of strings.  Return the value of LIBS before changing it
+    (any type can be used, it is passed to SetLIBS() later.)
+
+context.PrependLIBS(lib_name_list)
+    Prepend "lib_name_list" to the value of LIBS.  "lib_namelist" is
+    a list of strings.  Return the value of LIBS before changing it
+    (any type can be used, it is passed to SetLIBS() later.)
+
+context.SetLIBS(value)
+    Set LIBS to "value".  The type of "value" is what AppendLIBS()
+    returned.  Return the value of LIBS before changing it (any type
+    can be used, it is passed to SetLIBS() later.)
+
+context.headerfilename
+    Name of file to append configure results to, usually "confdefs.h".
+    The file must not exist or be empty when starting.  Empty or None
+    to skip this (some tests will not work!).
+
+context.config_h  (may be missing).
+    If present, must be a string, which will be filled with the
+    contents of a config_h file.
+
+context.vardict
+    Dictionary holding variables used for the tests and stores results
+    from the tests, used for the build commands.  Normally contains
+    "CC", "LIBS", "CPPFLAGS", etc.
+
+context.havedict
+    Dictionary holding results from the tests that are to be used
+    inside a program.  Names often start with "HAVE\_".  These are zero
+    (feature not present) or one (feature present).  Other variables
+    may have any value, e.g., "PERLVERSION" can be a number and
+    "SYSTEMNAME" a string.
+"""
 
 import re
 
@@ -278,7 +267,7 @@ def CheckFunc(context, function_name, header = None, language = None):
 #ifdef __cplusplus
 extern "C"
 #endif
-char %s();""" % function_name
+char %s(void);""" % function_name
 
     lang, suffix, msg = _lang2suffix(language)
     if msg:
@@ -296,7 +285,7 @@ char %s();""" % function_name
 
 int main(void) {
 #if defined (__stub_%(name)s) || defined (__stub___%(name)s)
-  fail fail fail
+  #error "%(name)s has a GNU stub, cannot check"
 #else
   %(name)s();
 #endif
@@ -579,9 +568,66 @@ int main(void)
                  "Set to 1 if %s is defined." % symbol)
     return st
 
+
+def CheckMember(context, aggregate_member, header = None, language = None):
+    """
+    Configure check for a C or C++ member "aggregate_member".
+    Optional "header" can be defined to include a header file.
+    "language" should be "C" or "C++" and is used to select the compiler.
+    Default is "C".
+    Note that this uses the current value of compiler and linker flags, make
+    sure $CFLAGS, $CPPFLAGS and $LIBS are set correctly.
+
+    Arguments:
+        aggregate_member : str
+            the member to check. For example, 'struct tm.tm_gmtoff'.
+        includes : str
+            Optional "header" can be defined to include a header file.
+        language : str
+            only C and C++ supported.
+
+    Returns the status (0 or False = Passed, True/non-zero = Failed).
+    """
+
+    lang, suffix, msg = _lang2suffix(language)
+    if msg:
+        context.Display("Cannot check for member %s: %s\n" % (aggregate_member, msg))
+        return True
+    context.Display("Checking for %s member %s... " % (lang, aggregate_member))
+    fields = aggregate_member.split('.')
+    if len(fields) != 2:
+        msg = "shall contain just one dot, for example 'struct tm.tm_gmtoff'"
+        context.Display("Cannot check for member %s: %s\n" % (aggregate_member, msg))
+        return True
+    aggregate, member = fields[0], fields[1]
+
+    # Include "confdefs.h" first, so that the header can use HAVE_HEADER_H.
+    if context.headerfilename:
+        includetext = '#include "%s"' % context.headerfilename
+    else:
+        includetext = ''
+    if not header:
+        header = ''
+    text = '''
+%(include)s
+%(header)s
+
+int main(void) {
+  if (sizeof ((%(aggregate)s *) 0)->%(member)s)
+    return 0;
+}''' % {'include': includetext,
+        'header': header,
+        'aggregate': aggregate,
+        'member': member}
+
+    ret = context.BuildProg(text, suffix)
+    _YesNoResult(context, ret, "HAVE_" + aggregate_member, text,
+                 "Define to 1 if the system has the member `%s`." % aggregate_member)
+    return ret
+
 def CheckLib(context, libs, func_name = None, header = None,
              extra_libs = None, call = None, language = None, autoadd = 1,
-             append = True):
+             append=True, unique=False):
     """
     Configure check for a C or C++ libraries "libs".  Searches through
     the list of libraries, until one is found where the test succeeds.
@@ -667,9 +713,9 @@ return 0;
             if extra_libs:
                 l.extend(extra_libs)
             if append:
-                oldLIBS = context.AppendLIBS(l)
+                oldLIBS = context.AppendLIBS(l, unique)
             else:
-                oldLIBS = context.PrependLIBS(l)
+                oldLIBS = context.PrependLIBS(l, unique)
             sym = "HAVE_LIB" + lib_name
         else:
             oldLIBS = -1

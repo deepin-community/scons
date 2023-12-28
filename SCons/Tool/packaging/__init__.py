@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,12 +21,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-"""SCons.Tool.Packaging
-
-SCons Packaging Tool.
-"""
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""SCons Packaging Tool."""
 
 import importlib
 from inspect import getfullargspec
@@ -35,8 +31,8 @@ import SCons.Environment
 from SCons.Errors import UserError, SConsEnvironmentError
 from SCons.Script import AddOption, GetOption
 from SCons.Util import is_List, make_path_relative
-from SCons.Variables import *
-from SCons.Warnings import warn, Warning
+from SCons.Variables import EnumVariable
+from SCons.Warnings import warn, SConsWarning
 
 
 __all__ = [
@@ -221,10 +217,11 @@ def generate(env):
         env['BUILDERS']['Package'] = Package
         env['BUILDERS']['Tag'] = Tag
 
+
 def exists(env):
     return 1
 
-# XXX
+
 def options(opts):
     opts.AddVariables(
         EnumVariable('PACKAGETYPE',
@@ -306,8 +303,11 @@ def stripinstallbuilder(target, source, env):
                     and file.builder.name in ["InstallBuilder", "InstallAsBuilder"])
 
     if len([src for src in source if has_no_install_location(src)]):
-        warn(Warning, "there are files to package which have no\
-        InstallBuilder attached, this might lead to irreproducible packages")
+        warn(
+            SConsWarning,
+            "there are files to package which have no InstallBuilder "
+            "attached, this might lead to irreproducible packages"
+        )
 
     n_source = []
     for s in source:

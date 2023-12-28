@@ -1,6 +1,5 @@
 """
-TestCommon.py:  a testing framework for commands and scripts
-                with commonly useful error handling
+A testing framework for commands and scripts with commonly useful error handling
 
 The TestCommon module provides a simple, high-level interface for writing
 tests of executable commands and scripts, especially commands and scripts
@@ -57,12 +56,14 @@ provided by the TestCommon class:
     test.must_not_exist('file1', ['file2', ...])
 
     test.must_not_be_empty('file')
-    
-    test.run(options = "options to be prepended to arguments",
-             stdout = "expected standard output from the program",
-             stderr = "expected error output from the program",
-             status = expected_status,
-             match = match_function)
+
+    test.run(
+        options="options to be prepended to arguments",
+        stdout="expected standard output from the program",
+        stderr="expected error output from the program",
+        status=expected_status,
+        match=match_function,
+    )
 
 The TestCommon module also provides the following variables
 
@@ -99,35 +100,43 @@ __author__ = "Steven Knight <knight at baldmt dot com>"
 __revision__ = "TestCommon.py 1.3.D001 2010/06/03 12:58:27 knight"
 __version__ = "1.3"
 
-import copy
 import glob
 import os
 import stat
 import sys
+import sysconfig
 
 from collections import UserList
 
 from TestCmd import *
 from TestCmd import __all__
 
-__all__.extend([ 'TestCommon',
-                 'exe_suffix',
-                 'obj_suffix',
-                 'shobj_prefix',
-                 'shobj_suffix',
-                 'lib_prefix',
-                 'lib_suffix',
-                 'dll_prefix',
-                 'dll_suffix',
-               ])
+__all__.extend(
+    [
+        'TestCommon',
+        'exe_suffix',
+        'obj_suffix',
+        'shobj_prefix',
+        'shobj_suffix',
+        'lib_prefix',
+        'lib_suffix',
+        'dll_prefix',
+        'dll_suffix',
+    ]
+)
 
 # Variables that describe the prefixes and suffixes on this system.
 if sys.platform == 'win32':
+    if sysconfig.get_platform() == "mingw":
+        obj_suffix = '.o'
+        shobj_suffix = '.o'
+    else:
+        obj_suffix = '.obj'
+        shobj_suffix = '.obj'
     exe_suffix   = '.exe'
-    obj_suffix   = '.obj'
-    shobj_suffix = '.obj'
     shobj_prefix = ''
     lib_prefix   = ''
+    # TODO: for mingw, is this .lib or .a?
     lib_suffix   = '.lib'
     dll_prefix   = ''
     dll_suffix   = '.dll'
@@ -252,7 +261,7 @@ class TestCommon(TestCmd):
         calling the base class initialization, and then changing directory
         to the workdir.
         """
-        TestCmd.__init__(self, **kw)
+        super().__init__(**kw)
         os.chdir(self.workdir)
 
     def options_arguments(self, options, arguments):
@@ -304,17 +313,16 @@ class TestCommon(TestCmd):
         Calling test exits FAILED if search result is false
         """
         if 'b' in mode:
-            # Python 3: reading a file in binary mode returns a 
-            # bytes object. We cannot find the index of a different
-            # (str) type in that, so convert.
+            # Reading a file in binary mode returns a bytes object.
+            # We cannot search for a string in a bytes obj so convert.
             required = to_bytes(required)
         file_contents = self.read(file, mode)
 
         if not contains(file_contents, required, find):
-            print("File `%s' does not contain required string." % file)
+            print(f"File `{file}' does not contain required string.")
             print(self.banner('Required string '))
             print(required)
-            print(self.banner('%s contents ' % file))
+            print(self.banner(f'{file} contents '))
             print(file_contents)
             self.fail_test()
 
@@ -335,9 +343,9 @@ class TestCommon(TestCmd):
         if not contains(output, input, find):
             if title is None:
                 title = 'output'
-            print('Missing expected input from {}:'.format(title))
+            print(f'Missing expected input from {title}:')
             print(input)
-            print(self.banner(title + ' '))
+            print(self.banner(f"{title} "))
             print(output)
             self.fail_test()
 
@@ -352,21 +360,44 @@ class TestCommon(TestCmd):
         function, of the form "find(output, line)", to use when searching
         for lines in the output.
         """
-        missing = []
         if is_List(output):
             output = '\n'.join(output)
 
-        for line in lines:
-            if not contains(output, line, find):
-                missing.append(line)
-
+        missing = [line for line in lines if not contains(output, line, find)]
         if missing:
             if title is None:
                 title = 'output'
-            sys.stdout.write("Missing expected lines from %s:\n" % title)
+            sys.stdout.write(f"Missing expected lines from {title}:\n")
             for line in missing:
-                sys.stdout.write('    ' + repr(line) + '\n')
-            sys.stdout.write(self.banner(title + ' ') + '\n')
+                sys.stdout.write(f"    {repr(line)}\n")
+            sys.stdout.write(f"{self.banner(f'{title} ')}\n")
+            sys.stdout.write(output)
+            self.fail_test()
+
+    def must_contain_single_instance_of(self, output, lines, title=None):
+        """Ensures that the specified output string (first argument)
+        contains one instance of the specified lines (second argument).
+
+        An optional third argument can be used to describe the type
+        of output being searched, and only shows up in failure output.
+
+        """
+        if is_List(output):
+            output = '\n'.join(output)
+
+        counts = {}
+        for line in lines:
+            count = output.count(line)
+            if count != 1:
+                counts[line] = count
+
+        if counts:
+            if title is None:
+                title = 'output'
+            sys.stdout.write(f"Unexpected number of lines from {title}:\n")
+            for line in counts:
+                sys.stdout.write(f"    {repr(line)}: found {str(counts[line])}\n")
+            sys.stdout.write(f"{self.banner(f'{title} ')}\n")
             sys.stdout.write(output)
             self.fail_test()
 
@@ -387,10 +418,10 @@ class TestCommon(TestCmd):
 
         if title is None:
             title = 'output'
-        sys.stdout.write("Missing any expected line from %s:\n" % title)
+        sys.stdout.write(f"Missing any expected line from {title}:\n")
         for line in lines:
-            sys.stdout.write('    ' + repr(line) + '\n')
-        sys.stdout.write(self.banner(title + ' ') + '\n')
+            sys.stdout.write(f"    {repr(line)}\n")
+        sys.stdout.write(f"{self.banner(f'{title} ')}\n")
         sys.stdout.write(output)
         self.fail_test()
 
@@ -430,15 +461,15 @@ class TestCommon(TestCmd):
         if title is None:
             title = 'output'
         if missing:
-            sys.stdout.write("Missing expected lines from %s:\n" % title)
+            sys.stdout.write(f"Missing expected lines from {title}:\n")
             for line in missing:
-                sys.stdout.write('    ' + repr(line) + '\n')
-            sys.stdout.write(self.banner('Missing %s ' % title) + '\n')
+                sys.stdout.write(f"    {repr(line)}\n")
+            sys.stdout.write(f"{self.banner(f'Missing {title} ')}\n")
         if out:
-            sys.stdout.write("Extra unexpected lines from %s:\n" % title)
+            sys.stdout.write(f"Extra unexpected lines from {title}:\n")
             for line in out:
-                sys.stdout.write('    ' + repr(line) + '\n')
-            sys.stdout.write(self.banner('Extra %s ' % title) + '\n')
+                sys.stdout.write(f"    {repr(line)}\n")
+            sys.stdout.write(f"{self.banner(f'Extra {title} ')}\n")
         sys.stdout.flush()
         self.fail_test()
 
@@ -492,8 +523,29 @@ class TestCommon(TestCmd):
         except KeyboardInterrupt:
             raise
         except:
-            print("Unexpected contents of `%s'" % file)
+            print(f"Unexpected contents of `{file}'")
             self.diff(expect, file_contents, 'contents ')
+            raise
+
+    def must_match_file(self, file, golden_file, mode='rb', match=None, message=None, newline=None):
+        """Matches the contents of the specified file (first argument)
+        against the expected contents (second argument).  The expected
+        contents are a list of lines or a string which will be split
+        on newlines.
+        """
+        file_contents = self.read(file, mode, newline)
+        golden_file_contents = self.read(golden_file, mode, newline)
+
+        if not match:
+            match = self.match
+
+        try:
+            self.fail_test(not match(to_str(file_contents), to_str(golden_file_contents)), message=message)
+        except KeyboardInterrupt:
+            raise
+        except:
+            print("Unexpected contents of `%s'" % file)
+            self.diff(golden_file_contents, file_contents, 'contents ')
             raise
 
     def must_not_contain(self, file, banned, mode = 'rb', find = None):
@@ -502,10 +554,10 @@ class TestCommon(TestCmd):
         file_contents = self.read(file, mode)
 
         if contains(file_contents, banned, find):
-            print("File `%s' contains banned string." % file)
+            print(f"File `{file}' contains banned string.")
             print(self.banner('Banned string '))
             print(banned)
-            print(self.banner('%s contents ' % file))
+            print(self.banner(f'{file} contents '))
             print(file_contents)
             self.fail_test()
 
@@ -528,10 +580,10 @@ class TestCommon(TestCmd):
         if unexpected:
             if title is None:
                 title = 'output'
-            sys.stdout.write("Unexpected lines in %s:\n" % title)
+            sys.stdout.write(f"Unexpected lines in {title}:\n")
             for line in unexpected:
-                sys.stdout.write('    ' + repr(line) + '\n')
-            sys.stdout.write(self.banner(title + ' ') + '\n')
+                sys.stdout.write(f"    {repr(line)}\n")
+            sys.stdout.write(f"{self.banner(f'{title} ')}\n")
             sys.stdout.write(output)
             self.fail_test()
 
@@ -575,16 +627,16 @@ class TestCommon(TestCmd):
         Exits FAILED if the file doesn't exist or is empty.
         """
         if not (os.path.exists(file) or os.path.islink(file)):
-            print("File doesn't exist: `%s'" % file)
+            print(f"File doesn't exist: `{file}'")
             self.fail_test(file)
 
         try:
             fsize = os.path.getsize(file)
         except OSError:
             fsize = 0
-            
+
         if fsize == 0:
-            print("File is empty: `%s'" % file)
+            print(f"File is empty: `{file}'")
             self.fail_test(file)
 
     def must_not_be_writable(self, *files):
@@ -612,8 +664,8 @@ class TestCommon(TestCmd):
         if _failed(self, status):
             expect = ''
             if status != 0:
-                expect = " (expected %s)" % str(status)
-            print("%s returned %s%s" % (self.program, _status(self), expect))
+                expect = f" (expected {str(status)})"
+            print(f"{self.program} returned {_status(self)}{expect}")
             print(self.banner('STDOUT '))
             print(actual_stdout)
             print(self.banner('STDERR '))
@@ -645,7 +697,7 @@ class TestCommon(TestCmd):
         """
         arguments = self.options_arguments(options, arguments)
         try:
-            return TestCmd.start(self, program, interpreter, arguments,
+            return super().start(program, interpreter, arguments,
                                  universal_newlines, **kw)
         except KeyboardInterrupt:
             raise
@@ -661,7 +713,7 @@ class TestCommon(TestCmd):
             except IndexError:
                 pass
             cmd_args = self.command_args(program, interpreter, arguments)
-            sys.stderr.write('Exception trying to execute: %s\n' % cmd_args)
+            sys.stderr.write(f'Exception trying to execute: {cmd_args}\n')
             raise e
 
     def finish(self, popen, stdout = None, stderr = '', status = 0, **kw):
@@ -682,7 +734,7 @@ class TestCommon(TestCmd):
                         command.  A value of None means don't
                         test exit status.
         """
-        TestCmd.finish(self, popen, **kw)
+        super().finish(popen, **kw)
         match = kw.get('match', self.match)
         self._complete(self.stdout(), stdout,
                        self.stderr(), stderr, status, match)
@@ -719,11 +771,11 @@ class TestCommon(TestCmd):
             del kw['match']
         except KeyError:
             match = self.match
-        TestCmd.run(self, **kw)
+        super().run(**kw)
         self._complete(self.stdout(), stdout,
                        self.stderr(), stderr, status, match)
 
-    def skip_test(self, message="Skipping test.\n"):
+    def skip_test(self, message="Skipping test.\n", from_fw=False):
         """Skips a test.
 
         Proper test-skipping behavior is dependent on the external
@@ -732,28 +784,54 @@ class TestCommon(TestCmd):
         In either case, we print the specified message as an indication
         that the substance of the test was skipped.
 
-        (This was originally added to support development under Aegis.
-        Technically, skipping a test is a NO RESULT, but Aegis would
-        treat that as a test failure and prevent the change from going to
-        the next step.  Since we ddn't want to force anyone using Aegis
-        to have to install absolutely every tool used by the tests, we
-        would actually report to Aegis that a skipped test has PASSED
-        so that the workflow isn't held up.)
+        The use case for treating the skip as a PASS was an old system
+        that the SCons project has not used for a long time, and that
+        code path could eventually be dropped.
+
+        When reporting a NO RESULT, we normally skip the top line of the
+        traceback, as from no_result()'s point of view, that is this
+        function, and the user is likely to only be interested in the
+        test that called us. If from_fw is True, the skip was initiated
+        indirectly, coming from some function in the framework
+        (test_for_tool, skip_if_msvc, etc.), in this case we want to
+        skip an additional line to eliminate that function as well.
+
+        Args:
+            message: text to include in the skip message. Callers
+                should normally provide a reason, to improve on the default.
+            from_fw: if true, skip an extra line of traceback.
         """
         if message:
             sys.stdout.write(message)
+            if not message.endswith('\n'):
+                sys.stdout.write('\n')
             sys.stdout.flush()
         pass_skips = os.environ.get('TESTCOMMON_PASS_SKIPS')
         if pass_skips in [None, 0, '0']:
-            # skip=1 means skip this function when showing where this
-            # result came from.  They only care about the line where the
-            # script called test.skip_test(), not the line number where
-            # we call test.no_result().
-            self.no_result(skip=1)
+            if from_fw:
+                self.no_result(skip=2)
+            else:
+                self.no_result(skip=1)
         else:
             # We're under the development directory for this change,
             # so this is an Aegis invocation; pass the test (exit 0).
             self.pass_test()
+
+    @staticmethod
+    def detailed_diff(value, expect):
+        v_split = value.split('\n')
+        e_split = expect.split('\n')
+        if len(v_split) != len(e_split):
+            print(f"different number of lines:{len(v_split)} {len(e_split)}")
+
+        # breakpoint()
+        for v, e in zip(v_split, e_split):
+            # print("%s:%s"%(v,e))
+            if v != e:
+                print(f"\n[{v}]\n[{e}]")
+
+        return f"Expected:\n{expect}\nGot:\n{value}"
+
 
 # Local Variables:
 # tab-width:4

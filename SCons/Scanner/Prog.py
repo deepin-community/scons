@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,29 +20,26 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Dependency scanner for program files."""
 
 import SCons.Node
 import SCons.Node.FS
-import SCons.Scanner
 import SCons.Util
+from . import ScannerBase, FindPathDirs
 
 # global, set by --debug=findlibs
 print_find_libs = None
 
-def ProgramScanner(**kw):
+def ProgramScanner(**kwargs):
     """Return a prototype Scanner instance for scanning executable
     files for static-lib dependencies"""
-    kw['path_function'] = SCons.Scanner.FindPathDirs('LIBPATH')
-    ps = SCons.Scanner.Base(scan, "ProgramScanner", **kw)
+    kwargs['path_function'] = FindPathDirs('LIBPATH')
+    ps = ScannerBase(scan, "ProgramScanner", **kwargs)
     return ps
 
 def _subst_libs(env, libs):
-    """
-    Substitute environment variables and split into list.
-    """
+    """Substitute environment variables and split into list."""
     if SCons.Util.is_String(libs):
         libs = env.subst(libs)
         if SCons.Util.is_String(libs):
@@ -57,9 +55,9 @@ def _subst_libs(env, libs):
     return libs
 
 def scan(node, env, libpath = ()):
-    """
-    This scanner scans program files for static-library
-    dependencies.  It will search the LIBPATH environment variable
+    """Scans program files for static-library dependencies.
+
+    It will search the LIBPATH environment variable
     for libraries specified in the LIBS variable, returning any
     files it finds as dependencies.
     """

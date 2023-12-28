@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,20 +20,15 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os
-import sys
 import unittest
 
 import TestCmd
-import TestUnit
 
 import SCons.dblite
-
 import SCons.SConsign
+from SCons.Util import get_hash_format, get_current_hash_algorithm_used
 
 class BuildInfo:
     def merge(self, object):
@@ -300,7 +296,10 @@ class SConsignFileTestCase(SConsignTestCase):
         file = test.workpath('sconsign_file')
 
         assert SCons.SConsign.DataBase == {}, SCons.SConsign.DataBase
-        assert SCons.SConsign.DB_Name == ".sconsign", SCons.SConsign.DB_Name
+        if get_hash_format() is None and get_current_hash_algorithm_used() == 'md5':
+            assert SCons.SConsign.DB_Name == ".sconsign", SCons.SConsign.DB_Name
+        else:
+            assert SCons.SConsign.DB_Name == ".sconsign_{}".format(get_current_hash_algorithm_used()), SCons.SConsign.DB_Name
         assert SCons.SConsign.DB_Module is SCons.dblite, SCons.SConsign.DB_Module
 
         SCons.SConsign.File(file)
@@ -382,18 +381,7 @@ class writeTestCase(SConsignTestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.TestSuite()
-    tclasses = [
-        BaseTestCase,
-        SConsignDBTestCase,
-        SConsignDirFileTestCase,
-        SConsignFileTestCase,
-        writeTestCase,
-    ]
-    for tclass in tclasses:
-        names = unittest.getTestCaseNames(tclass, 'test_')
-        suite.addTests(list(map(tclass, names)))
-    TestUnit.run(suite)
+    unittest.main()
 
 # Local Variables:
 # tab-width:4

@@ -1,0 +1,13 @@
+# Long lines
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/NEWS.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/RELEASE-NOTES.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch01.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch02.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch02s01.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch02s02.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch02s03.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch02s04.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch03.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch03s01.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/ch03s02.html]
+source-is-missing [SCons/Tool/docbook/docbook-xsl-1.76.1/webhelp/docs/content/index.html]

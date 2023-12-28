@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,7 +30,6 @@ __revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 Test that mingw respects SHLINKCOMSTR, SHCCCOMSTR, and LDMODULECOMSTR
 """
 
-import sys
 import TestSCons
 
 _python_ = TestSCons._python_
@@ -38,13 +39,16 @@ test = TestSCons.TestSCons()
 test.dir_fixture('bug_2799')
 
 test.run('-n -Q')
-test.must_contain_all_lines(test.stdout(),
-              [
-                  'SHCC shlib.o',
-                  'SHLINK libtestlib.so',
-                  'SHCC module.o',
-                  'LDMODULE libtestmodule.so',''],
-              )
+test.must_contain_all_lines(
+    test.stdout(),
+    [
+        'SHCC shlib.o',
+        'SHLINK libtestlib.so',
+        'SHCC module.o',
+        'LDMODULE libtestmodule.so',
+        '',
+    ],
+)
 
 test.pass_test()
 

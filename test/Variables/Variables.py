@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,15 +22,13 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import TestSCons
 
 test = TestSCons.TestSCons()
 
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment()
 print(env['CC'])
 print(" ".join(env['CCFLAGS']))
@@ -95,6 +95,7 @@ def test_tool(env):
         env.Append(CCFLAGS = '-g')
 
 
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(variables=opts, tools=['default', test_tool])
 
 Help('Variables settable in custom.py or on the command line:\\n' + opts.GenerateHelpText(env))
@@ -218,6 +219,7 @@ opts.Add('DEBUG_BUILD',
 opts.Add('UNSPECIFIED',
          'An option with no value')
 
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(variables = opts)
 
 print(env['RELEASE_BUILD'])
@@ -276,6 +278,7 @@ opts.Add('LISTOPTION_TEST',
          'none',
          names = ['a','b','c',])
 
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(variables = opts)
 
 print(env['RELEASE_BUILD'])
@@ -320,6 +323,7 @@ opts.Add('CC',
 opts.Add('UNSPECIFIED',
          'An option with no value')
 
+DefaultEnvironment(tools=[])  # test speedup
 env = Environment(variables=opts)
 
 def compare(a, b):
@@ -356,6 +360,7 @@ Use scons -H for help about command-line options.
 
 test.write('SConstruct', """
 import SCons.Variables
+DefaultEnvironment(tools=[])  # test speedup
 env1 = Environment(variables = Variables())
 env2 = Environment(variables = SCons.Variables.Variables())
 """)

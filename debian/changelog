@@ -1,3 +1,27 @@
+scons (4.5.2+dfsg-1) unstable; urgency=medium
+
+  [ Debian Janitor <janitor@jelmer.uk> ]
+  * debian/copyright: use spaces rather than tabs to start continuation lines.
+  * Bump debhelper from old 12 to 13.
+  * Set upstream metadata fields: Bug-Database, Bug-Submit, Repository-Browse.
+
+  [ Laszlo Boszormenyi (GCS) ]
+  * New major upstream release.
+  * Update Standards-Version to 4.6.2 .
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Mon, 09 Oct 2023 00:58:33 +0200
+
+scons (4.4.0+dfsg-1) unstable; urgency=medium
+
+  * New upstream release:
+    - fix content-timestamp decider for symlinks (closes: #981584).
+  * Move binaries back to /usr (closes: #1020082).
+  * Handle man pages correctly.
+  * Suggest scons-doc on scons package (closes: #973301).
+  * Update Standards-Version to 4.6.1 .
+
+ -- Laszlo Boszormenyi (GCS) <gcs@debian.org>  Tue, 20 Sep 2022 17:35:41 +0200
+
 scons (4.0.1+dfsg-2) unstable; urgency=medium
 
   * Upload to Sid.

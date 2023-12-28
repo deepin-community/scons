@@ -1,26 +1,6 @@
-"""SCons.Node
-
-The Node package for the SCons software construction utility.
-
-This is, in many ways, the heart of SCons.
-
-A Node is where we encapsulate all of the dependency information about
-any thing that SCons can build, or about any thing which SCons can use
-to build some other thing.  The canonical "thing," of course, is a file,
-but a Node can also represent something remote (like a web page) or
-something completely abstract (like an Alias).
-
-Each specific type of "thing" is specifically represented by a subclass
-of the Node base class:  Node.FS.File for files, Node.Alias for aliases,
-etc.  Dependency information is kept here in the base class, and
-information specific to files/aliases/etc. is in the subclass.  The
-goal, if we've done this correctly, is that any type of "thing" should
-be able to depend on any other type of "thing."
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -41,28 +21,35 @@ be able to depend on any other type of "thing."
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""The Node package for the SCons software construction utility.
 
-import os
+This is, in many ways, the heart of SCons.
+
+A Node is where we encapsulate all of the dependency information about
+any thing that SCons can build, or about any thing which SCons can use
+to build some other thing.  The canonical "thing," of course, is a file,
+but a Node can also represent something remote (like a web page) or
+something completely abstract (like an Alias).
+
+Each specific type of "thing" is specifically represented by a subclass
+of the Node base class:  Node.FS.File for files, Node.Alias for aliases,
+etc.  Dependency information is kept here in the base class, and
+information specific to files/aliases/etc. is in the subclass.  The
+goal, if we've done this correctly, is that any type of "thing" should
+be able to depend on any other type of "thing."
+
+"""
+
 import collections
 import copy
-from itertools import chain
-
-try:
-    from itertools import zip_longest
-except ImportError:
-    from itertools import izip_longest as zip_longest
+from itertools import chain, zip_longest
 
 import SCons.Debug
-from SCons.Debug import logInstanceCreation
 import SCons.Executor
 import SCons.Memoize
-import SCons.Util
-from SCons.Util import MD5signature
-
-from SCons.Debug import Trace
-
 from SCons.compat import NoSlotsPyPy
+from SCons.Debug import logInstanceCreation, Trace
+from SCons.Util import hash_signature, is_List, UniqueList, render_tree
 
 print_duplicate = 0
 
@@ -698,8 +685,8 @@ class Node(object, metaclass=NoSlotsPyPy):
         """Try to retrieve the node's content from a cache
 
         This method is called from multiple threads in a parallel build,
-        so only do thread safe stuff here. Do thread unsafe stuff in
-        built().
+        so only do thread safe stuff here. Do thread unsafe stuff
+        in :meth:`built`.
 
         Returns true if the node was successfully retrieved.
         """
@@ -756,12 +743,12 @@ class Node(object, metaclass=NoSlotsPyPy):
         """Actually build the node.
 
         This is called by the Taskmaster after it's decided that the
-        Node is out-of-date and must be rebuilt, and after the prepare()
-        method has gotten everything, uh, prepared.
+        Node is out-of-date and must be rebuilt, and after the
+        :meth:`prepare` method has gotten everything, uh, prepared.
 
         This method is called from multiple threads in a parallel build,
         so only do thread safe stuff here. Do thread unsafe stuff
-        in built().
+        in :meth:`built`.
 
         """
         try:
@@ -781,7 +768,7 @@ class Node(object, metaclass=NoSlotsPyPy):
             # Handle issue where builder emits more than one target and
             # the source file for the builder is generated.
             # in that case only the first target was getting it's .implicit
-            # cleared when the source file is built (second scan). 
+            # cleared when the source file is built (second scan).
             # leaving only partial implicits from scan before source file is generated
             # typically the compiler only. Then scanned files are appended
             # This is persisted to sconsign and rebuild causes false rebuilds
@@ -823,24 +810,20 @@ class Node(object, metaclass=NoSlotsPyPy):
 
     def release_target_info(self):
         """Called just after this node has been marked
-         up-to-date or was built completely.
+        up-to-date or was built completely.
 
-         This is where we try to release as many target node infos
-         as possible for clean builds and update runs, in order
-         to minimize the overall memory consumption.
+        This is where we try to release as many target node infos
+        as possible for clean builds and update runs, in order
+        to minimize the overall memory consumption.
 
-         By purging attributes that aren't needed any longer after
-         a Node (=File) got built, we don't have to care that much how
-         many KBytes a Node actually requires...as long as we free
-         the memory shortly afterwards.
+        By purging attributes that aren't needed any longer after
+        a Node (=File) got built, we don't have to care that much how
+        many KBytes a Node actually requires...as long as we free
+        the memory shortly afterwards.
 
-         @see: built() and File.release_target_info()
-         """
+        @see: built() and File.release_target_info()
+        """
         pass
-
-    #
-    #
-    #
 
     def add_to_waiting_s_e(self, node):
         self.waiting_s_e.add(node)
@@ -877,10 +860,12 @@ class Node(object, metaclass=NoSlotsPyPy):
         self.clear_memoized_values()
         self.ninfo = self.new_ninfo()
         self.executor_cleanup()
-        try:
-            delattr(self, '_calculated_sig')
-        except AttributeError:
-            pass
+        for attr in ['cachedir_csig', 'cachesig', 'contentsig']:
+            try:
+                delattr(self, attr)
+            except AttributeError:
+                pass
+        self.cached = 0
         self.includes = None
 
     def clear_memoized_values(self):
@@ -900,7 +885,7 @@ class Node(object, metaclass=NoSlotsPyPy):
         than simply examining the builder attribute directly ("if
         node.builder: ..."). When the builder attribute is examined
         directly, it ends up calling __getattr__ for both the __len__
-        and __nonzero__ attributes on instances of our Builder Proxy
+        and __bool__ attributes on instances of our Builder Proxy
         class(es), generating a bazillion extra calls and slowing
         things down immensely.
         """
@@ -952,6 +937,19 @@ class Node(object, metaclass=NoSlotsPyPy):
     def is_sconscript(self):
         """ Returns true if this node is an sconscript """
         return self in SConscriptNodes
+
+    def is_conftest(self):
+        """ Returns true if this node is an conftest node"""
+        try:
+            self.attributes.conftest_node
+        except AttributeError:
+            return False
+        return True
+
+    def check_attributes(self, name):
+        """ Simple API to check if the node.attributes for name has been set"""
+        return getattr(getattr(self, "attributes", None), name, None)
+
 
     def alter_targets(self):
         """Return a list of alternate targets for this Node.
@@ -1173,7 +1171,7 @@ class Node(object, metaclass=NoSlotsPyPy):
 
         if self.has_builder():
             binfo.bact = str(executor)
-            binfo.bactsig = MD5signature(executor.get_contents())
+            binfo.bactsig = hash_signature(executor.get_contents())
 
         if self._specific_sources:
             sources = [s for s in self.sources if s not in ignore_set]
@@ -1211,7 +1209,7 @@ class Node(object, metaclass=NoSlotsPyPy):
             return self.ninfo.csig
         except AttributeError:
             ninfo = self.get_ninfo()
-            ninfo.csig = MD5signature(self.get_contents())
+            ninfo.csig = hash_signature(self.get_contents())
             return self.ninfo.csig
 
     def get_cachedir_csig(self):
@@ -1280,7 +1278,7 @@ class Node(object, metaclass=NoSlotsPyPy):
             self._add_child(self.depends, self.depends_set, depend)
         except TypeError as e:
             e = e.args[0]
-            if SCons.Util.is_List(e):
+            if is_List(e):
                 s = list(map(str, e))
             else:
                 s = str(e)
@@ -1289,7 +1287,7 @@ class Node(object, metaclass=NoSlotsPyPy):
     def add_prerequisite(self, prerequisite):
         """Adds prerequisites"""
         if self.prerequisites is None:
-            self.prerequisites = SCons.Util.UniqueList()
+            self.prerequisites = UniqueList()
         self.prerequisites.extend(prerequisite)
         self._children_reset()
 
@@ -1299,7 +1297,7 @@ class Node(object, metaclass=NoSlotsPyPy):
             self._add_child(self.ignore, self.ignore_set, depend)
         except TypeError as e:
             e = e.args[0]
-            if SCons.Util.is_List(e):
+            if is_List(e):
                 s = list(map(str, e))
             else:
                 s = str(e)
@@ -1313,7 +1311,7 @@ class Node(object, metaclass=NoSlotsPyPy):
             self._add_child(self.sources, self.sources_set, source)
         except TypeError as e:
             e = e.args[0]
-            if SCons.Util.is_List(e):
+            if is_List(e):
                 s = list(map(str, e))
             else:
                 s = str(e)
@@ -1502,7 +1500,7 @@ class Node(object, metaclass=NoSlotsPyPy):
 
         if self.has_builder():
             contents = self.get_executor().get_contents()
-            newsig = MD5signature(contents)
+            newsig = hash_signature(contents)
             if bi.bactsig != newsig:
                 if t: Trace(': bactsig %s != newsig %s' % (bi.bactsig, newsig))
                 result = True
@@ -1557,7 +1555,7 @@ class Node(object, metaclass=NoSlotsPyPy):
                         path = None
                     def f(node, env=env, scanner=scanner, path=path):
                         return node.get_found_includes(env, scanner, path)
-                    return SCons.Util.render_tree(s, f, 1)
+                    return render_tree(s, f, 1)
         else:
             return None
 

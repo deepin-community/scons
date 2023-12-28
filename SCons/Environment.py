@@ -1,16 +1,6 @@
-"""SCons.Environment
-
-Base class for construction Environments.  These are
-the primary objects used to communicate dependency and
-construction information to the build engine.
-
-Keyword arguments supplied when the construction Environment
-is created are construction variables used to initialize the
-Environment
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -31,15 +21,21 @@ Environment
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Base class for construction Environments.
 
+These are the primary objects used to communicate dependency and
+construction information to the build engine.
+
+Keyword arguments supplied when the construction Environment is created
+are construction variables used to initialize the Environment.
+"""
 
 import copy
 import os
 import sys
 import re
 import shlex
-from collections import UserDict
+from collections import UserDict, deque
 
 import SCons.Action
 import SCons.Builder
@@ -57,8 +53,27 @@ import SCons.SConf
 import SCons.SConsign
 import SCons.Subst
 import SCons.Tool
-import SCons.Util
 import SCons.Warnings
+from SCons.Util import (
+    AppendPath,
+    CLVar,
+    LogicalLines,
+    MethodWrapper,
+    PrependPath,
+    Split,
+    WhereIs,
+    flatten,
+    is_Dict,
+    is_List,
+    is_Scalar,
+    is_Sequence,
+    is_String,
+    is_Tuple,
+    semi_deepcopy,
+    semi_deepcopy_dict,
+    to_String_for_subst,
+    uniquer_hashables,
+)
 
 class _Null:
     pass
@@ -72,37 +87,37 @@ _warn_target_signatures_deprecated = True
 CleanTargets = {}
 CalculatorArgs = {}
 
-semi_deepcopy = SCons.Util.semi_deepcopy
-semi_deepcopy_dict = SCons.Util.semi_deepcopy_dict
-
 def alias_builder(env, target, source):
     pass
 
-AliasBuilder = SCons.Builder.Builder(action = alias_builder,
-                                     target_factory = SCons.Node.Alias.default_ans.Alias,
-                                     source_factory = SCons.Node.FS.Entry,
-                                     multi = 1,
-                                     is_explicit = None,
-                                     name='AliasBuilder')
+AliasBuilder = SCons.Builder.Builder(
+    action=alias_builder,
+    target_factory=SCons.Node.Alias.default_ans.Alias,
+    source_factory=SCons.Node.FS.Entry,
+    multi=True,
+    is_explicit=None,
+    name='AliasBuilder',
+)
 
 def apply_tools(env, tools, toolpath):
     # Store the toolpath in the Environment.
+    # This is expected to work even if no tools are given, so do this first.
     if toolpath is not None:
         env['toolpath'] = toolpath
-
     if not tools:
         return
+
     # Filter out null tools from the list.
     for tool in [_f for _f in tools if _f]:
-        if SCons.Util.is_List(tool) or isinstance(tool, tuple):
-            toolname = tool[0]
-            toolargs = tool[1] # should be a dict of kw args
-            tool = env.Tool(toolname, **toolargs)
+        if is_List(tool) or is_Tuple(tool):
+            # toolargs should be a dict of kw args
+            toolname, toolargs, *rest = tool
+            _ = env.Tool(toolname, **toolargs)
         else:
-            env.Tool(tool)
+            _ = env.Tool(tool)
 
 # These names are (or will be) controlled by SCons; users should never
-# set or override them.  This warning can optionally be turned off,
+# set or override them.  The warning can optionally be turned off,
 # but scons will still ignore the illegal variable names even if it's off.
 reserved_construction_var_names = [
     'CHANGED_SOURCES',
@@ -119,7 +134,7 @@ future_reserved_construction_var_names = [
     #'HOST_OS',
     #'HOST_ARCH',
     #'HOST_CPU',
-    ]
+]
 
 def copy_non_reserved_keywords(dict):
     result = semi_deepcopy(dict)
@@ -179,51 +194,220 @@ def _delete_duplicates(l, keep_last):
     return result
 
 
+def _add_cppdefines(
+    env_dict: dict,
+    val,  # add annotation?
+    prepend: bool = False,
+    unique: bool = False,
+    delete_existing: bool = False,
+) -> None:
+    """Adds to ``CPPDEFINES``, using the rules for C preprocessor macros.
+
+    This is split out from regular construction variable addition because
+    these entries can express either a macro with a replacement value or
+    one without.  A macro with replacement value can be supplied as *val*
+    in three ways: as a combined string ``"name=value"``; as a tuple
+    ``(name, value)``, or as an entry in a dictionary ``{"name": value}``.
+    A list argument with multiple macros can also be given.
+
+    Additions can be unconditional (duplicates allowed) or uniquing (no dupes).
+
+    Note if a replacement value is supplied, *unique* requires a full
+    match to decide uniqueness - both the macro name and the replacement.
+    The inner :func:`_is_in` is used to figure that out.
+
+    Args:
+        env_dict: the dictionary containing the ``CPPDEFINES`` to be modified.
+        val: the value to add, can be string, sequence or dict
+        prepend: whether to put *val* in front or back.
+        unique: whether to add *val* if it already exists.
+        delete_existing: if *unique* is true, add *val* after removing previous.
+
+    .. versionadded:: 4.5.0
+    """
+
+    def _add_define(item, defines: deque, prepend: bool = False) -> None:
+        """Convenience function to prepend/append a single value.
+
+        Sole purpose is to shorten code in the outer function.
+        """
+        if prepend:
+            defines.appendleft(item)
+        else:
+            defines.append(item)
+
+
+    def _is_in(item, defines: deque):
+        """Returns match for *item* if found in *defines*.
+
+        Accounts for type differences: tuple ("FOO", "BAR"), list
+        ["FOO", "BAR"], string "FOO=BAR" and dict {"FOO": "BAR"} all
+        differ as far as Python equality comparison is concerned, but
+        are the same for purposes of creating the preprocessor macro.
+        Also an unvalued string should match something like ``("FOO", None)``.
+        Since the caller may wish to remove a matched entry, we need to
+        return it - cannot remove *item* itself unless it happened to
+        be an exact (type) match.
+
+        Called from a place we know *defines* is always a deque, and
+        *item* will not be a dict, so don't need to do much type checking.
+        If this ends up used more generally, would need to adjust that.
+
+        Note implied assumption that members of a list-valued define
+        will not be dicts - we cannot actually guarantee this, since
+        if the initial add is a list its contents are not converted.
+        """
+        def _macro_conv(v) -> list:
+            """Normalizes a macro to a list for comparisons."""
+            if is_Tuple(v):
+                return list(v)
+            elif is_String(v):
+                rv = v.split("=")
+                if len(rv) == 1:
+                    return [v, None]
+                return rv
+            return v
+
+        if item in defines:  # cheap check first
+            return item
+
+        item = _macro_conv(item)
+        for define in defines:
+            if item == _macro_conv(define):
+                return define
+
+        return False
+
+    key = 'CPPDEFINES'
+    try:
+        defines = env_dict[key]
+    except KeyError:
+        # This is a new entry, just save it as is. Defer conversion to
+        # preferred type until someone tries to amend the value.
+        # processDefines has no problem with unconverted values if it
+        # gets called without any later additions.
+        if is_String(val):
+            env_dict[key] = val.split()
+        else:
+            env_dict[key] = val
+        return
+
+    # Convert type of existing to deque (if necessary) to simplify processing
+    # of additions - inserting at either end is cheap. Deferred conversion
+    # is also useful in case CPPDEFINES was set initially without calling
+    # through here (e.g. Environment kwarg, or direct assignment).
+    if isinstance(defines, deque):
+        # Already a deque? do nothing. Explicit check is so we don't get
+        # picked up by the is_list case below.
+        pass
+    elif is_String(defines):
+        env_dict[key] = deque(defines.split())
+    elif is_Tuple(defines):
+        if len(defines) > 2:
+            raise SCons.Errors.UserError(
+                f"Invalid tuple in CPPDEFINES: {define!r}, must be a two-tuple"
+            )
+        env_dict[key] = deque([defines])
+    elif is_List(defines):
+        # a little extra work in case the initial container has dict
+        # item(s) inside it, so those can be matched by _is_in().
+        result = deque()
+        for define in defines:
+            if is_Dict(define):
+                result.extend(define.items())
+            else:
+                result.append(define)
+        env_dict[key] = result
+    elif is_Dict(defines):
+        env_dict[key] = deque(defines.items())
+    else:
+        env_dict[key] = deque(defines)
+    defines = env_dict[key]  # in case we reassigned due to conversion
+
+    # now actually do the addition.
+    if is_Dict(val):
+        # Unpack the dict while applying to existing
+        for item in val.items():
+            if unique:
+                match = _is_in(item, defines)
+                if match and delete_existing:
+                    defines.remove(match)
+                    _add_define(item, defines, prepend)
+                elif not match:
+                    _add_define(item, defines, prepend)
+            else:
+                _add_define(item, defines, prepend)
+
+    elif is_String(val):
+        for v in val.split():
+            if unique:
+                match = _is_in(v, defines)
+                if match and delete_existing:
+                    defines.remove(match)
+                    _add_define(v, defines, prepend)
+                elif not match:
+                    _add_define(v, defines, prepend)
+            else:
+                _add_define(v, defines, prepend)
+
+    # A tuple appended to anything should yield -Dkey=value
+    elif is_Tuple(val):
+        if len(val) > 2:
+            raise SCons.Errors.UserError(
+                f"Invalid tuple added to CPPDEFINES: {val!r}, "
+                "must be a two-tuple"
+            )
+        if len(val) == 1:
+            val = (val[0], None)  # normalize
+        if not is_Scalar(val[0]) or not is_Scalar(val[1]):
+            raise SCons.Errors.UserError(
+                f"Invalid tuple added to CPPDEFINES: {val!r}, "
+                "values must be scalar"
+            )
+        if unique:
+            match = _is_in(val, defines)
+            if match and delete_existing:
+                defines.remove(match)
+                _add_define(val, defines, prepend)
+            elif not match:
+                _add_define(val, defines, prepend)
+        else:
+            _add_define(val, defines, prepend)
+
+    elif is_List(val):
+        tmp = []
+        for item in val:
+            if unique:
+                match = _is_in(item, defines)
+                if match and delete_existing:
+                    defines.remove(match)
+                    tmp.append(item)
+                elif not match:
+                    tmp.append(item)
+            else:
+                tmp.append(item)
+
+        if prepend:
+            defines.extendleft(tmp)
+        else:
+            defines.extend(tmp)
+
+    # else:  # are there any other cases? processDefines doesn't think so.
+
 
 # The following is partly based on code in a comment added by Peter
 # Shannon at the following page (there called the "transplant" class):
 #
 # ASPN : Python Cookbook : Dynamically added methods to a class
-# http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/81732
+# https://code.activestate.com/recipes/81732/
 #
 # We had independently been using the idiom as BuilderWrapper, but
 # factoring out the common parts into this base class, and making
 # BuilderWrapper a subclass that overrides __call__() to enforce specific
 # Builder calling conventions, simplified some of our higher-layer code.
-
-class MethodWrapper:
-    """
-    A generic Wrapper class that associates a method (which can
-    actually be any callable) with an object.  As part of creating this
-    MethodWrapper object an attribute with the specified (by default,
-    the name of the supplied method) is added to the underlying object.
-    When that new "method" is called, our __call__() method adds the
-    object as the first argument, simulating the Python behavior of
-    supplying "self" on method calls.
-
-    We hang on to the name by which the method was added to the underlying
-    base class so that we can provide a method to "clone" ourselves onto
-    a new underlying object being copied (without which we wouldn't need
-    to save that info).
-    """
-    def __init__(self, object, method, name=None):
-        if name is None:
-            name = method.__name__
-        self.object = object
-        self.method = method
-        self.name = name
-        setattr(self.object, name, self)
-
-    def __call__(self, *args, **kwargs):
-        nargs = (self.object,) + args
-        return self.method(*nargs, **kwargs)
-
-    def clone(self, new_object):
-        """
-        Returns an object that re-binds the underlying "method" to
-        the specified new object.
-        """
-        return self.__class__(new_object, self.method, self.name)
+#
+# Note: MethodWrapper moved to SCons.Util as it was needed there
+# and otherwise we had a circular import problem.
 
 class BuilderWrapper(MethodWrapper):
     """
@@ -248,11 +432,11 @@ class BuilderWrapper(MethodWrapper):
         if source is _null:
             source = target
             target = None
-        if target is not None and not SCons.Util.is_List(target):
+        if target is not None and not is_List(target):
             target = [target]
-        if source is not None and not SCons.Util.is_List(source):
+        if source is not None and not is_List(source):
             source = [source]
-        return MethodWrapper.__call__(self, target, source, *args, **kw)
+        return super().__call__(target, source, *args, **kw)
 
     def __repr__(self):
         return '<BuilderWrapper %s>' % repr(self.name)
@@ -292,12 +476,12 @@ class BuilderDict(UserDict):
     the Builders.  We need to do this because every time someone changes
     the Builders in the Environment's BUILDERS dictionary, we must
     update the Environment's attributes."""
-    def __init__(self, dict, env):
+    def __init__(self, mapping, env):
         # Set self.env before calling the superclass initialization,
         # because it will end up calling our other methods, which will
         # need to point the values in this dictionary to self.env.
         self.env = env
-        UserDict.__init__(self, dict)
+        super().__init__(mapping)
 
     def __semi_deepcopy__(self):
         # These cannot be copied since they would both modify the same builder object, and indeed
@@ -311,15 +495,15 @@ class BuilderDict(UserDict):
             pass
         else:
             self.env.RemoveMethod(method)
-        UserDict.__setitem__(self, item, val)
+        super().__setitem__(item, val)
         BuilderWrapper(self.env, val, item)
 
     def __delitem__(self, item):
-        UserDict.__delitem__(self, item)
+        super().__delitem__(item)
         delattr(self.env, item)
 
-    def update(self, dict):
-        for i, v in dict.items():
+    def update(self, mapping):
+        for i, v in mapping.items():
             self.__setitem__(i, v)
 
 
@@ -387,8 +571,7 @@ class SubstitutionEnvironment:
         self._special_set['SCANNERS'] = _set_SCANNERS
 
         # Freeze the keys of self._special_set in a list for use by
-        # methods that need to check.  (Empirically, list scanning has
-        # gotten better than dict.has_key() in Python 2.5.)
+        # methods that need to check.
         self._special_set_keys = list(self._special_set.keys())
 
     def __eq__(self, other):
@@ -410,10 +593,9 @@ class SubstitutionEnvironment:
         #
         # The "key in self._special_set_keys" test here seems to perform
         # pretty well for the number of keys we have.  A hard-coded
-        # list works a little better in Python 2.5, but that has the
+        # list worked a little better in Python 2.5, but that has the
         # disadvantage of maybe getting out of sync if we ever add more
-        # variable names.  Using self._special_set.has_key() works a
-        # little better in Python 2.4, but is worse than this test.
+        # variable names.
         # So right now it seems like a good trade-off, but feel free to
         # revisit this with bench/env.__setitem__.py as needed (and
         # as newer versions of Python come out).
@@ -424,21 +606,16 @@ class SubstitutionEnvironment:
             # key and we don't need to check.  If we do check, using a
             # global, pre-compiled regular expression directly is more
             # efficient than calling another function or a method.
-            if key not in self._dict \
-               and not _is_valid_var.match(key):
-                    raise UserError("Illegal construction variable `%s'" % key)
+            if key not in self._dict and not _is_valid_var.match(key):
+                raise UserError("Illegal construction variable `%s'" % key)
             self._dict[key] = value
 
     def get(self, key, default=None):
         """Emulates the get() method of dictionaries."""
         return self._dict.get(key, default)
 
-    def has_key(self, key):
-        """Emulates the has_key() method of dictionaries."""
-        return key in self._dict
-
     def __contains__(self, key):
-        return self._dict.__contains__(key)
+        return key in self._dict
 
     def keys(self):
         """Emulates the keys() method of dictionaries."""
@@ -452,6 +629,10 @@ class SubstitutionEnvironment:
         """Emulates the items() method of dictionaries."""
         return self._dict.items()
 
+    def setdefault(self, key, default=None):
+        """Emulates the setdefault() method of dictionaries."""
+        return self._dict.setdefault(key, default)
+
     def arg2nodes(self, args, node_factory=_null, lookup_list=_null, **kw):
         if node_factory is _null:
             node_factory = self.fs.File
@@ -461,24 +642,24 @@ class SubstitutionEnvironment:
         if not args:
             return []
 
-        args = SCons.Util.flatten(args)
+        args = flatten(args)
 
         nodes = []
         for v in args:
-            if SCons.Util.is_String(v):
+            if is_String(v):
                 n = None
                 for l in lookup_list:
                     n = l(v)
                     if n is not None:
                         break
                 if n is not None:
-                    if SCons.Util.is_String(n):
+                    if is_String(n):
                         # n = self.subst(n, raw=1, **kw)
                         kw['raw'] = 1
                         n = self.subst(n, **kw)
                         if node_factory:
                             n = node_factory(n)
-                    if SCons.Util.is_List(n):
+                    if is_List(n):
                         nodes.extend(n)
                     else:
                         nodes.append(n)
@@ -486,7 +667,7 @@ class SubstitutionEnvironment:
                     # v = node_factory(self.subst(v, raw=1, **kw))
                     kw['raw'] = 1
                     v = node_factory(self.subst(v, **kw))
-                    if SCons.Util.is_List(v):
+                    if is_List(v):
                         nodes.extend(v)
                     else:
                         nodes.append(v)
@@ -501,7 +682,7 @@ class SubstitutionEnvironment:
     def lvars(self):
         return {}
 
-    def subst(self, string, raw=0, target=None, source=None, conv=None, executor=None):
+    def subst(self, string, raw=0, target=None, source=None, conv=None, executor=None, overrides=False):
         """Recursively interpolates construction variables from the
         Environment into the specified string, returning the expanded
         result.  Construction variables are specified by a $ prefix
@@ -516,18 +697,18 @@ class SubstitutionEnvironment:
         lvars['__env__'] = self
         if executor:
             lvars.update(executor.get_lvars())
-        return SCons.Subst.scons_subst(string, self, raw, target, source, gvars, lvars, conv)
+        return SCons.Subst.scons_subst(string, self, raw, target, source, gvars, lvars, conv, overrides=overrides)
 
     def subst_kw(self, kw, raw=0, target=None, source=None):
         nkw = {}
         for k, v in kw.items():
             k = self.subst(k, raw, target, source)
-            if SCons.Util.is_String(v):
+            if is_String(v):
                 v = self.subst(v, raw, target, source)
             nkw[k] = v
         return nkw
 
-    def subst_list(self, string, raw=0, target=None, source=None, conv=None, executor=None):
+    def subst_list(self, string, raw=0, target=None, source=None, conv=None, executor=None, overrides=False):
         """Calls through to SCons.Subst.scons_subst_list().  See
         the documentation for that function."""
         gvars = self.gvars()
@@ -535,13 +716,13 @@ class SubstitutionEnvironment:
         lvars['__env__'] = self
         if executor:
             lvars.update(executor.get_lvars())
-        return SCons.Subst.scons_subst_list(string, self, raw, target, source, gvars, lvars, conv)
+        return SCons.Subst.scons_subst_list(string, self, raw, target, source, gvars, lvars, conv, overrides=overrides)
 
     def subst_path(self, path, target=None, source=None):
         """Substitute a path list, turning EntryProxies into Nodes
         and leaving Nodes (and other objects) as-is."""
 
-        if not SCons.Util.is_List(path):
+        if not is_List(path):
             path = [path]
 
         def s(obj):
@@ -554,23 +735,23 @@ class SubstitutionEnvironment:
             try:
                 get = obj.get
             except AttributeError:
-                obj = SCons.Util.to_String_for_subst(obj)
+                obj = to_String_for_subst(obj)
             else:
                 obj = get()
             return obj
 
         r = []
         for p in path:
-            if SCons.Util.is_String(p):
+            if is_String(p):
                 p = self.subst(p, target=target, source=source, conv=s)
-                if SCons.Util.is_List(p):
+                if is_List(p):
                     if len(p) == 1:
                         p = p[0]
                     else:
                         # We have an object plus a string, or multiple
                         # objects that we need to smush together.  No choice
                         # but to make them into a string.
-                        p = ''.join(map(SCons.Util.to_String_for_subst, p))
+                        p = ''.join(map(to_String_for_subst, p))
             else:
                 p = s(p)
             r.append(p)
@@ -578,26 +759,45 @@ class SubstitutionEnvironment:
 
     subst_target_source = subst
 
-    def backtick(self, command):
+
+    def backtick(self, command) -> str:
+        """Emulate command substitution.
+
+        Provides behavior conceptually like POSIX Shell notation
+        for running a command in backquotes (backticks) by running
+        ``command`` and returning the resulting output string.
+
+        This is not really a public API any longer, it is provided for the
+        use of :meth:`ParseFlags` (which supports it using a syntax of
+        !command) and :meth:`ParseConfig`.
+
+        Raises:
+            OSError: if the external command returned non-zero exit status.
+        """
+
         import subprocess
+
         # common arguments
-        kw = { 'stdin' : 'devnull',
-               'stdout' : subprocess.PIPE,
-               'stderr' : subprocess.PIPE,
-               'universal_newlines' : True,
-             }
+        kw = {
+            "stdin": "devnull",
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "universal_newlines": True,
+        }
         # if the command is a list, assume it's been quoted
         # othewise force a shell
-        if not SCons.Util.is_List(command): kw['shell'] = True
+        if not is_List(command):
+            kw["shell"] = True
         # run constructed command
         p = SCons.Action._subproc(self, command, **kw)
-        out,err = p.communicate()
+        out, err = p.communicate()
         status = p.wait()
         if err:
             sys.stderr.write("" + err)
         if status:
             raise OSError("'%s' exited %d" % (command, status))
         return out
+
 
     def AddMethod(self, function, name=None):
         """
@@ -638,32 +838,38 @@ class SubstitutionEnvironment:
             else:
                 overrides[key] = SCons.Subst.scons_subst_once(value, self, key)
         env = OverrideEnvironment(self, overrides)
-        if merges: env.MergeFlags(merges)
+        if merges:
+            env.MergeFlags(merges)
         return env
 
-    def ParseFlags(self, *flags):
-        """
-        Parse the set of flags and return a dict with the flags placed
-        in the appropriate entry.  The flags are treated as a typical
-        set of command-line flags for a GNU-like toolchain and used to
-        populate the entries in the dict immediately below.  If one of
-        the flag strings begins with a bang (exclamation mark), it is
-        assumed to be a command and the rest of the string is executed;
+    def ParseFlags(self, *flags) -> dict:
+        """Return a dict of parsed flags.
+
+        Parse ``flags`` and return a dict with the flags distributed into
+        the appropriate construction variable names.  The flags are treated
+        as a typical set of command-line flags for a GNU-style toolchain,
+        such as might have been generated by one of the {foo}-config scripts,
+        and used to populate the entries based on knowledge embedded in
+        this method - the choices are not expected to be portable to other
+        toolchains.
+
+        If one of the ``flags`` strings begins with a bang (exclamation mark),
+        it is assumed to be a command and the rest of the string is executed;
         the result of that evaluation is then added to the dict.
         """
-        dict = {
-            'ASFLAGS'       : SCons.Util.CLVar(''),
-            'CFLAGS'        : SCons.Util.CLVar(''),
-            'CCFLAGS'       : SCons.Util.CLVar(''),
-            'CXXFLAGS'      : SCons.Util.CLVar(''),
+        mapping = {
+            'ASFLAGS'       : CLVar(''),
+            'CFLAGS'        : CLVar(''),
+            'CCFLAGS'       : CLVar(''),
+            'CXXFLAGS'      : CLVar(''),
             'CPPDEFINES'    : [],
-            'CPPFLAGS'      : SCons.Util.CLVar(''),
+            'CPPFLAGS'      : CLVar(''),
             'CPPPATH'       : [],
-            'FRAMEWORKPATH' : SCons.Util.CLVar(''),
-            'FRAMEWORKS'    : SCons.Util.CLVar(''),
+            'FRAMEWORKPATH' : CLVar(''),
+            'FRAMEWORKS'    : CLVar(''),
             'LIBPATH'       : [],
             'LIBS'          : [],
-            'LINKFLAGS'     : SCons.Util.CLVar(''),
+            'LINKFLAGS'     : CLVar(''),
             'RPATH'         : [],
         }
 
@@ -672,7 +878,7 @@ class SubstitutionEnvironment:
             if not arg:
                 return
 
-            if not SCons.Util.is_String(arg):
+            if not is_String(arg):
                 for t in arg: do_parse(t)
                 return
 
@@ -681,12 +887,12 @@ class SubstitutionEnvironment:
                 arg = self.backtick(arg[1:])
 
             # utility function to deal with -D option
-            def append_define(name, dict = dict):
+            def append_define(name, mapping=mapping):
                 t = name.split('=')
                 if len(t) == 1:
-                    dict['CPPDEFINES'].append(name)
+                    mapping['CPPDEFINES'].append(name)
                 else:
-                    dict['CPPDEFINES'].append([t[0], '='.join(t[1:])])
+                    mapping['CPPDEFINES'].append([t[0], '='.join(t[1:])])
 
             # Loop through the flags and add them to the appropriate option.
             # This tries to strike a balance between checking for all possible
@@ -716,64 +922,67 @@ class SubstitutionEnvironment:
                         append_define(arg)
                     elif append_next_arg_to == '-include':
                         t = ('-include', self.fs.File(arg))
-                        dict['CCFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
                     elif append_next_arg_to == '-imacros':
                         t = ('-imacros', self.fs.File(arg))
-                        dict['CCFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
                     elif append_next_arg_to == '-isysroot':
                         t = ('-isysroot', arg)
-                        dict['CCFLAGS'].append(t)
-                        dict['LINKFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
+                        mapping['LINKFLAGS'].append(t)
                     elif append_next_arg_to == '-isystem':
                         t = ('-isystem', arg)
-                        dict['CCFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
                     elif append_next_arg_to == '-iquote':
                         t = ('-iquote', arg)
-                        dict['CCFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
                     elif append_next_arg_to == '-idirafter':
                         t = ('-idirafter', arg)
-                        dict['CCFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
                     elif append_next_arg_to == '-arch':
                         t = ('-arch', arg)
-                        dict['CCFLAGS'].append(t)
-                        dict['LINKFLAGS'].append(t)
+                        mapping['CCFLAGS'].append(t)
+                        mapping['LINKFLAGS'].append(t)
+                    elif append_next_arg_to == '--param':
+                        t = ('--param', arg)
+                        mapping['CCFLAGS'].append(t)
                     else:
-                        dict[append_next_arg_to].append(arg)
+                        mapping[append_next_arg_to].append(arg)
                     append_next_arg_to = None
                 elif not arg[0] in ['-', '+']:
-                    dict['LIBS'].append(self.fs.File(arg))
+                    mapping['LIBS'].append(self.fs.File(arg))
                 elif arg == '-dylib_file':
-                    dict['LINKFLAGS'].append(arg)
+                    mapping['LINKFLAGS'].append(arg)
                     append_next_arg_to = 'LINKFLAGS'
                 elif arg[:2] == '-L':
                     if arg[2:]:
-                        dict['LIBPATH'].append(arg[2:])
+                        mapping['LIBPATH'].append(arg[2:])
                     else:
                         append_next_arg_to = 'LIBPATH'
                 elif arg[:2] == '-l':
                     if arg[2:]:
-                        dict['LIBS'].append(arg[2:])
+                        mapping['LIBS'].append(arg[2:])
                     else:
                         append_next_arg_to = 'LIBS'
                 elif arg[:2] == '-I':
                     if arg[2:]:
-                        dict['CPPPATH'].append(arg[2:])
+                        mapping['CPPPATH'].append(arg[2:])
                     else:
                         append_next_arg_to = 'CPPPATH'
                 elif arg[:4] == '-Wa,':
-                    dict['ASFLAGS'].append(arg[4:])
-                    dict['CCFLAGS'].append(arg)
+                    mapping['ASFLAGS'].append(arg[4:])
+                    mapping['CCFLAGS'].append(arg)
                 elif arg[:4] == '-Wl,':
                     if arg[:11] == '-Wl,-rpath=':
-                        dict['RPATH'].append(arg[11:])
+                        mapping['RPATH'].append(arg[11:])
                     elif arg[:7] == '-Wl,-R,':
-                        dict['RPATH'].append(arg[7:])
+                        mapping['RPATH'].append(arg[7:])
                     elif arg[:6] == '-Wl,-R':
-                        dict['RPATH'].append(arg[6:])
+                        mapping['RPATH'].append(arg[6:])
                     else:
-                        dict['LINKFLAGS'].append(arg)
+                        mapping['LINKFLAGS'].append(arg)
                 elif arg[:4] == '-Wp,':
-                    dict['CPPFLAGS'].append(arg)
+                    mapping['CPPFLAGS'].append(arg)
                 elif arg[:2] == '-D':
                     if arg[2:]:
                         append_define(arg[2:])
@@ -782,57 +991,81 @@ class SubstitutionEnvironment:
                 elif arg == '-framework':
                     append_next_arg_to = 'FRAMEWORKS'
                 elif arg[:14] == '-frameworkdir=':
-                    dict['FRAMEWORKPATH'].append(arg[14:])
+                    mapping['FRAMEWORKPATH'].append(arg[14:])
                 elif arg[:2] == '-F':
                     if arg[2:]:
-                        dict['FRAMEWORKPATH'].append(arg[2:])
+                        mapping['FRAMEWORKPATH'].append(arg[2:])
                     else:
                         append_next_arg_to = 'FRAMEWORKPATH'
-                elif arg in ['-mno-cygwin',
-                             '-pthread',
-                             '-openmp',
-                             '-fmerge-all-constants',
-                             '-fopenmp']:
-                    dict['CCFLAGS'].append(arg)
-                    dict['LINKFLAGS'].append(arg)
+                elif arg in (
+                    '-mno-cygwin',
+                    '-pthread',
+                    '-openmp',
+                    '-fmerge-all-constants',
+                    '-fopenmp',
+                ) or arg.startswith('-fsanitize'):
+                    mapping['CCFLAGS'].append(arg)
+                    mapping['LINKFLAGS'].append(arg)
                 elif arg == '-mwindows':
-                    dict['LINKFLAGS'].append(arg)
+                    mapping['LINKFLAGS'].append(arg)
                 elif arg[:5] == '-std=':
                     if '++' in arg[5:]:
-                        key='CXXFLAGS'
+                        key = 'CXXFLAGS'
                     else:
-                        key='CFLAGS'
-                    dict[key].append(arg)
+                        key = 'CFLAGS'
+                    mapping[key].append(arg)
                 elif arg[0] == '+':
-                    dict['CCFLAGS'].append(arg)
-                    dict['LINKFLAGS'].append(arg)
-                elif arg in ['-include', '-imacros', '-isysroot', '-isystem', '-iquote', '-idirafter', '-arch']:
+                    mapping['CCFLAGS'].append(arg)
+                    mapping['LINKFLAGS'].append(arg)
+                elif arg in [
+                    '-include',
+                    '-imacros',
+                    '-isysroot',
+                    '-isystem',
+                    '-iquote',
+                    '-idirafter',
+                    '-arch',
+                    '--param',
+                ]:
                     append_next_arg_to = arg
                 else:
-                    dict['CCFLAGS'].append(arg)
+                    mapping['CCFLAGS'].append(arg)
 
         for arg in flags:
             do_parse(arg)
-        return dict
+        return mapping
 
-    def MergeFlags(self, args, unique=1, dict=None):
-        """
-        Merge the dict in args into the construction variables of this
-        env, or the passed-in dict.  If args is not a dict, it is
-        converted into a dict using ParseFlags.  If unique is not set,
-        the flags are appended rather than merged.
-        """
+    def MergeFlags(self, args, unique=True) -> None:
+        """Merge flags into construction variables.
 
-        if dict is None:
-            dict = self
-        if not SCons.Util.is_Dict(args):
+        Merges the flags from *args* into this construction environent.
+        If *args* is not a dict, it is first converted to one with
+        flags distributed into appropriate construction variables.
+        See :meth:`ParseFlags`.
+
+        As a side effect, if *unique* is true, a new object is created
+        for each modified construction variable by the loop at the end.
+        This is silently expected by the :meth:`Override` *parse_flags*
+        functionality, which does not want to share the list (or whatever)
+        with the environment being overridden.
+
+        Args:
+            args: flags to merge
+            unique: merge flags rather than appending (default: True).
+                When merging, path variables are retained from the front,
+                other construction variables from the end.
+        """
+        if not is_Dict(args):
             args = self.ParseFlags(args)
+
         if not unique:
             self.Append(**args)
-            return self
+            return
+
         for key, value in args.items():
             if not value:
                 continue
+            value = Split(value)
             try:
                 orig = self[key]
             except KeyError:
@@ -850,6 +1083,16 @@ class SubstitutionEnvironment:
                     try:
                         orig = orig + value
                     except (KeyError, TypeError):
+                        # If CPPDEFINES is a deque, adding value (a list)
+                        # results in TypeError, so we handle that case here.
+                        # Just in case we got called from Override, make
+                        # sure we make a copy, because we don't go through
+                        # the cleanup loops at the end of the outer for loop,
+                        # which implicitly gives us a new object.
+                        if isinstance(orig, deque):
+                            self[key] = self[key].copy()
+                            self.AppendUnique(CPPDEFINES=value, delete_existing=True)
+                            continue
                         try:
                             add_to_orig = orig.append
                         except AttributeError:
@@ -868,8 +1111,8 @@ class SubstitutionEnvironment:
                 for v in orig[::-1]:
                     if v not in t:
                         t.insert(0, v)
+
             self[key] = t
-        return self
 
 
 def default_decide_source(dependency, target, prev_ni, repo_node=None):
@@ -882,15 +1125,19 @@ def default_decide_target(dependency, target, prev_ni, repo_node=None):
     return f(dependency, target, prev_ni, repo_node)
 
 
-def default_copy_from_cache(src, dst):
-    f = SCons.Defaults.DefaultEnvironment().copy_from_cache
-    return f(src, dst)
+def default_copy_from_cache(env, src, dst):
+    return SCons.CacheDir.CacheDir.copy_from_cache(env, src, dst)
+
+
+def default_copy_to_cache(env, src, dst):
+    return SCons.CacheDir.CacheDir.copy_to_cache(env, src, dst)
 
 
 class Base(SubstitutionEnvironment):
-    """Base class for "real" construction Environments.  These are the
-    primary objects used to communicate dependency and construction
-    information to the build engine.
+    """Base class for "real" construction Environments.
+
+    These are the primary objects used to communicate dependency
+    and construction information to the build engine.
 
     Keyword arguments supplied when the construction Environment
     is created are construction variables used to initialize the
@@ -911,17 +1158,19 @@ class Base(SubstitutionEnvironment):
     # dictionary functionality that we actually need and use.
     #######################################################################
 
-    def __init__(self,
-                 platform=None,
-                 tools=None,
-                 toolpath=None,
-                 variables=None,
-                 parse_flags = None,
-                 **kw):
-        """
-        Initialization of a basic SCons construction environment,
-        including setting up special construction variables like BUILDER,
-        PLATFORM, etc., and searching for and applying available Tools.
+    def __init__(
+        self,
+        platform=None,
+        tools=None,
+        toolpath=None,
+        variables=None,
+        parse_flags=None,
+        **kw
+    ):
+        """Initialization of a basic SCons construction environment.
+
+        Sets up special construction variables like BUILDER,
+        PLATFORM, etc., and searches for and applies available Tools.
 
         Note that we do *not* call the underlying base class
         (SubsitutionEnvironment) initialization, because we need to
@@ -946,7 +1195,7 @@ class Base(SubstitutionEnvironment):
         self.decide_target = default_decide_target
         self.decide_source = default_decide_source
 
-        self.copy_from_cache = default_copy_from_cache
+        self.cache_timestamp_newer = False
 
         self._dict['BUILDERS'] = BuilderDict(self._dict['BUILDERS'], self)
 
@@ -954,18 +1203,18 @@ class Base(SubstitutionEnvironment):
             platform = self._dict.get('PLATFORM', None)
             if platform is None:
                 platform = SCons.Platform.Platform()
-        if SCons.Util.is_String(platform):
+        if is_String(platform):
             platform = SCons.Platform.Platform(platform)
         self._dict['PLATFORM'] = str(platform)
         platform(self)
 
-        self._dict['HOST_OS']      = self._dict.get('HOST_OS',None)
-        self._dict['HOST_ARCH']    = self._dict.get('HOST_ARCH',None)
+        # these should be set by the platform, backstop just in case
+        self._dict['HOST_OS'] = self._dict.get('HOST_OS', None)
+        self._dict['HOST_ARCH'] = self._dict.get('HOST_ARCH', None)
 
-        # Now set defaults for TARGET_{OS|ARCH}
-        self._dict['TARGET_OS']      = self._dict.get('TARGET_OS',None)
-        self._dict['TARGET_ARCH']    = self._dict.get('TARGET_ARCH',None)
-
+        # these are not currently set by the platform, give them a default
+        self._dict['TARGET_OS'] = self._dict.get('TARGET_OS', None)
+        self._dict['TARGET_ARCH'] = self._dict.get('TARGET_ARCH', None)
 
         # Apply the passed-in and customizable variables to the
         # environment before calling the tools, because they may use
@@ -1005,7 +1254,8 @@ class Base(SubstitutionEnvironment):
             self._dict[key] = val
 
         # Finally, apply any flags to be merged in
-        if parse_flags: self.MergeFlags(parse_flags)
+        if parse_flags:
+            self.MergeFlags(parse_flags)
 
     #######################################################################
     # Utility methods that are primarily for internal use by SCons.
@@ -1020,17 +1270,36 @@ class Base(SubstitutionEnvironment):
         except KeyError:
             return None
 
+    def validate_CacheDir_class(self, custom_class=None):
+        """Validate the passed custom CacheDir class, or if no args are passed,
+        validate the custom CacheDir class from the environment.
+        """
+
+        if custom_class is None:
+            custom_class = self.get("CACHEDIR_CLASS", SCons.CacheDir.CacheDir)
+        if not issubclass(custom_class, SCons.CacheDir.CacheDir):
+            raise UserError("Custom CACHEDIR_CLASS %s not derived from CacheDir" % str(custom_class))
+        return custom_class
+
     def get_CacheDir(self):
         try:
             path = self._CacheDir_path
         except AttributeError:
             path = SCons.Defaults.DefaultEnvironment()._CacheDir_path
+
+        cachedir_class = self.validate_CacheDir_class()
         try:
-            if path == self._last_CacheDir_path:
+            if (path == self._last_CacheDir_path
+                    # this checks if the cachedir class type has changed from what the
+                    # instantiated cache dir type is. If the are exactly the same we
+                    # can just keep using the existing one, otherwise the user is requesting
+                    # something new, so we will re-instantiate below.
+                    and type(self._last_CacheDir) is cachedir_class):
                 return self._last_CacheDir
         except AttributeError:
             pass
-        cd = SCons.CacheDir.CacheDir(path)
+
+        cd = cachedir_class(path)
         self._last_CacheDir_path = path
         self._last_CacheDir = cd
         return cd
@@ -1082,7 +1351,7 @@ class Base(SubstitutionEnvironment):
             # claim they can scan the same suffix, earlier scanners
             # in the list will overwrite later scanners, so that
             # the result looks like a "first match" to the user.
-            if not SCons.Util.is_List(scanners):
+            if not is_List(scanners):
                 scanners = [scanners]
             else:
                 scanners = scanners[:] # copy so reverse() doesn't mod original
@@ -1112,11 +1381,24 @@ class Base(SubstitutionEnvironment):
         except KeyError:
             pass
 
-    def _update(self, dict):
-        """Update an environment's values directly, bypassing the normal
-        checks that occur when users try to set items.
+    def _update(self, other):
+        """Private method to update an environment's consvar dict directly.
+
+        Bypasses the normal checks that occur when users try to set items.
         """
-        self._dict.update(dict)
+        self._dict.update(other)
+
+    def _update_onlynew(self, other):
+        """Private method to add new items to an environment's consvar dict.
+
+        Only adds items from `other` whose keys do not already appear in
+        the existing dict; values from `other` are not used for replacement.
+        Bypasses the normal checks that occur when users try to set items.
+        """
+        for k, v in other.items():
+            if k not in self._dict:
+                self._dict[k] = v
+
 
     def get_src_sig_type(self):
         try:
@@ -1144,104 +1426,94 @@ class Base(SubstitutionEnvironment):
     #######################################################################
 
     def Append(self, **kw):
-        """Append values to existing construction variables
-        in an Environment.
+        """Append values to construction variables in an Environment.
+
+        The variable is created if it is not already present.
         """
+
         kw = copy_non_reserved_keywords(kw)
         for key, val in kw.items():
-            # It would be easier on the eyes to write this using
-            # "continue" statements whenever we finish processing an item,
-            # but Python 1.5.2 apparently doesn't let you use "continue"
-            # within try:-except: blocks, so we have to nest our code.
+            if key == 'CPPDEFINES':
+                _add_cppdefines(self._dict, val)
+                continue
+
             try:
-                if key == 'CPPDEFINES' and SCons.Util.is_String(self._dict[key]):
-                    self._dict[key] = [self._dict[key]]
                 orig = self._dict[key]
             except KeyError:
-                # No existing variable in the environment, so just set
-                # it to the new value.
-                if key == 'CPPDEFINES' and SCons.Util.is_String(val):
-                    self._dict[key] = [val]
-                else:
-                    self._dict[key] = val
+                # No existing var in the environment, so set to the new value.
+                self._dict[key] = val
+                continue
+
+            try:
+                # Check if the original looks like a dict: has .update?
+                update_dict = orig.update
+            except AttributeError:
+                try:
+                    # Just try to add them together.  This will work
+                    # in most cases, when the original and new values
+                    # are compatible types.
+                    self._dict[key] = orig + val
+                except (KeyError, TypeError):
+                    try:
+                        # Check if the original is a list: has .append?
+                        add_to_orig = orig.append
+                    except AttributeError:
+                        # The original isn't a list, but the new
+                        # value is (by process of elimination),
+                        # so insert the original in the new value
+                        # (if there's one to insert) and replace
+                        # the variable with it.
+                        if orig:
+                            val.insert(0, orig)
+                        self._dict[key] = val
+                    else:
+                        # The original is a list, so append the new
+                        # value to it (if there's a value to append).
+                        if val:
+                            add_to_orig(val)
+                continue
+
+            # The original looks like a dictionary, so update it
+            # based on what we think the value looks like.
+            # We can't just try adding the value because
+            # dictionaries don't have __add__() methods, and
+            # things like UserList will incorrectly coerce the
+            # original dict to a list (which we don't want).
+            if is_List(val):
+                for v in val:
+                    orig[v] = None
             else:
                 try:
-                    # Check if the original looks like a dictionary.
-                    # If it is, we can't just try adding the value because
-                    # dictionaries don't have __add__() methods, and
-                    # things like UserList will incorrectly coerce the
-                    # original dict to a list (which we don't want).
-                    update_dict = orig.update
-                except AttributeError:
-                    try:
-                        # Most straightforward:  just try to add them
-                        # together.  This will work in most cases, when the
-                        # original and new values are of compatible types.
-                        self._dict[key] = orig + val
-                    except (KeyError, TypeError):
-                        try:
-                            # Check if the original is a list.
-                            add_to_orig = orig.append
-                        except AttributeError:
-                            # The original isn't a list, but the new
-                            # value is (by process of elimination),
-                            # so insert the original in the new value
-                            # (if there's one to insert) and replace
-                            # the variable with it.
-                            if orig:
-                                val.insert(0, orig)
-                            self._dict[key] = val
-                        else:
-                            # The original is a list, so append the new
-                            # value to it (if there's a value to append).
-                            if val:
-                                add_to_orig(val)
-                else:
-                    # The original looks like a dictionary, so update it
-                    # based on what we think the value looks like.
-                    if SCons.Util.is_List(val):
-                        if key == 'CPPDEFINES':
-                            tmp = []
-                            for (k, v) in orig.items():
-                                if v is not None:
-                                    tmp.append((k, v))
-                                else:
-                                    tmp.append((k,))
-                            orig = tmp
-                            orig += val
-                            self._dict[key] = orig
-                        else:
-                            for v in val:
-                                orig[v] = None
+                    update_dict(val)
+                except (AttributeError, TypeError, ValueError):
+                    if is_Dict(val):
+                        for k, v in val.items():
+                            orig[k] = v
                     else:
-                        try:
-                            update_dict(val)
-                        except (AttributeError, TypeError, ValueError):
-                            if SCons.Util.is_Dict(val):
-                                for k, v in val.items():
-                                    orig[k] = v
-                            else:
-                                orig[val] = None
+                        orig[val] = None
+
         self.scanner_map_delete(kw)
 
-    # allow Dirs and strings beginning with # for top-relative
-    # Note this uses the current env's fs (in self).
     def _canonicalize(self, path):
-        if not SCons.Util.is_String(path): # typically a Dir
+        """Allow Dirs and strings beginning with # for top-relative.
+
+        Note this uses the current env's fs (in self).
+        """
+        if not is_String(path):  # typically a Dir
             path = str(path)
         if path and path[0] == '#':
             path = str(self.fs.Dir(path))
         return path
 
-    def AppendENVPath(self, name, newpath, envname = 'ENV',
-                      sep = os.pathsep, delete_existing=0):
-        """Append path elements to the path 'name' in the 'ENV'
+    def AppendENVPath(self, name, newpath, envname='ENV',
+                      sep=os.pathsep, delete_existing=False):
+        """Append path elements to the path *name* in the *envname*
         dictionary for this environment.  Will only add any particular
         path once, and will normpath and normcase all paths to help
         assure this.  This can also handle the case where the env
         variable is a list instead of a string.
 
-        If delete_existing is 0, a newpath which is already in the path
+        If *delete_existing* is False, a *newpath* element already in the path
         will not be moved to the end (it will be left where it is).
         """
 
@@ -1249,71 +1521,34 @@ class Base(SubstitutionEnvironment):
         if envname in self._dict and name in self._dict[envname]:
             orig = self._dict[envname][name]
 
-        nv = SCons.Util.AppendPath(orig, newpath, sep, delete_existing,
-                                   canonicalize=self._canonicalize)
+        nv = AppendPath(orig, newpath, sep, delete_existing, canonicalize=self._canonicalize)
 
         if envname not in self._dict:
             self._dict[envname] = {}
 
         self._dict[envname][name] = nv
 
-    def AppendUnique(self, delete_existing=0, **kw):
+    def AppendUnique(self, delete_existing=False, **kw):
         """Append values to existing construction variables
         in an Environment, if they're not already there.
-        If delete_existing is 1, removes existing values first, so
+        If delete_existing is True, removes existing values first, so
         values move to end.
         """
         kw = copy_non_reserved_keywords(kw)
         for key, val in kw.items():
-            if SCons.Util.is_List(val):
+            if key == 'CPPDEFINES':
+                _add_cppdefines(self._dict, val, unique=True, delete_existing=delete_existing)
+                continue
+            if is_List(val):
                 val = _delete_duplicates(val, delete_existing)
             if key not in self._dict or self._dict[key] in ('', None):
                 self._dict[key] = val
-            elif SCons.Util.is_Dict(self._dict[key]) and \
-                 SCons.Util.is_Dict(val):
+            elif is_Dict(self._dict[key]) and is_Dict(val):
                 self._dict[key].update(val)
-            elif SCons.Util.is_List(val):
+            elif is_List(val):
                 dk = self._dict[key]
-                if key == 'CPPDEFINES':
-                    tmp = []
-                    for i in val:
-                        if SCons.Util.is_List(i):
-                            if len(i) >= 2:
-                                tmp.append((i[0], i[1]))
-                            else:
-                                tmp.append((i[0],))
-                        elif SCons.Util.is_Tuple(i):
-                            tmp.append(i)
-                        else:
-                            tmp.append((i,))
-                    val = tmp
-                    # Construct a list of (key, value) tuples.
-                    if SCons.Util.is_Dict(dk):
-                        tmp = []
-                        for (k, v) in dk.items():
-                            if v is not None:
-                                tmp.append((k, v))
-                            else:
-                                tmp.append((k,))
-                        dk = tmp
-                    elif SCons.Util.is_String(dk):
-                        dk = [(dk,)]
-                    else:
-                        tmp = []
-                        for i in dk:
-                            if SCons.Util.is_List(i):
-                                if len(i) >= 2:
-                                    tmp.append((i[0], i[1]))
-                                else:
-                                    tmp.append((i[0],))
-                            elif SCons.Util.is_Tuple(i):
-                                tmp.append(i)
-                            else:
-                                tmp.append((i,))
-                        dk = tmp
-                else:
-                    if not SCons.Util.is_List(dk):
-                        dk = [dk]
+                if not is_List(dk):
+                    dk = [dk]
                 if delete_existing:
                     dk = [x for x in dk if x not in val]
                 else:
@@ -1321,79 +1556,25 @@ class Base(SubstitutionEnvironment):
                 self._dict[key] = dk + val
             else:
                 dk = self._dict[key]
-                if SCons.Util.is_List(dk):
-                    if key == 'CPPDEFINES':
-                        tmp = []
-                        for i in dk:
-                            if SCons.Util.is_List(i):
-                                if len(i) >= 2:
-                                    tmp.append((i[0], i[1]))
-                                else:
-                                    tmp.append((i[0],))
-                            elif SCons.Util.is_Tuple(i):
-                                tmp.append(i)
-                            else:
-                                tmp.append((i,))
-                        dk = tmp
-                        # Construct a list of (key, value) tuples.
-                        if SCons.Util.is_Dict(val):
-                            tmp = []
-                            for (k, v) in val.items():
-                                if v is not None:
-                                    tmp.append((k, v))
-                                else:
-                                    tmp.append((k,))
-                            val = tmp
-                        elif SCons.Util.is_String(val):
-                            val = [(val,)]
-                        if delete_existing:
-                            dk = list(filter(lambda x, val=val: x not in val, dk))
-                            self._dict[key] = dk + val
-                        else:
-                            dk = [x for x in dk if x not in val]
-                            self._dict[key] = dk + val
+                if is_List(dk):
+                    # By elimination, val is not a list.  Since dk is a
+                    # list, wrap val in a list first.
+                    if delete_existing:
+                        dk = list(filter(lambda x, val=val: x not in val, dk))
+                        self._dict[key] = dk + [val]
                     else:
-                        # By elimination, val is not a list.  Since dk is a
-                        # list, wrap val in a list first.
-                        if delete_existing:
-                            dk = list(filter(lambda x, val=val: x not in val, dk))
+                        if val not in dk:
                             self._dict[key] = dk + [val]
-                        else:
-                            if val not in dk:
-                                self._dict[key] = dk + [val]
                 else:
-                    if key == 'CPPDEFINES':
-                        if SCons.Util.is_String(dk):
-                            dk = [dk]
-                        elif SCons.Util.is_Dict(dk):
-                            tmp = []
-                            for (k, v) in dk.items():
-                                if v is not None:
-                                    tmp.append((k, v))
-                                else:
-                                    tmp.append((k,))
-                            dk = tmp
-                        if SCons.Util.is_String(val):
-                            if val in dk:
-                                val = []
-                            else:
-                                val = [val]
-                        elif SCons.Util.is_Dict(val):
-                            tmp = []
-                            for i,j in val.items():
-                                if j is not None:
-                                    tmp.append((i,j))
-                                else:
-                                    tmp.append(i)
-                            val = tmp
                     if delete_existing:
                         dk = [x for x in dk if x not in val]
                     self._dict[key] = dk + val
         self.scanner_map_delete(kw)
 
     def Clone(self, tools=[], toolpath=None, parse_flags = None, **kw):
-        """Return a copy of a construction Environment.  The
-        copy is like a Python "deep copy"--that is, independent
+        """Return a copy of a construction Environment.
+
+        The copy is like a Python "deep copy"--that is, independent
         copies are made recursively of each objects--except that
         a reference is copied when an object is not deep-copyable
         (like a function).  There are no references to any mutable
@@ -1432,7 +1613,8 @@ class Base(SubstitutionEnvironment):
         clone.Replace(**new)
 
         # Finally, apply any flags to be merged in
-        if parse_flags: clone.MergeFlags(parse_flags)
+        if parse_flags:
+            clone.MergeFlags(parse_flags)
 
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Environment.EnvironmentClone')
         return clone
@@ -1462,23 +1644,16 @@ class Base(SubstitutionEnvironment):
     def _changed_timestamp_match(self, dependency, target, prev_ni, repo_node=None):
         return dependency.changed_timestamp_match(target, prev_ni, repo_node)
 
-    def _copy_from_cache(self, src, dst):
-        return self.fs.copy(src, dst)
-
-    def _copy2_from_cache(self, src, dst):
-        return self.fs.copy2(src, dst)
-
     def Decider(self, function):
-        copy_function = self._copy2_from_cache
+        self.cache_timestamp_newer = False
         if function in ('MD5', 'content'):
-            if not SCons.Util.md5:
-                raise UserError("MD5 signatures are not available in this version of Python.")
+            # TODO: Handle if user requests MD5 and not content with deprecation notice
             function = self._changed_content
-        elif function == 'MD5-timestamp':
+        elif function in ('MD5-timestamp', 'content-timestamp'):
             function = self._changed_timestamp_then_content
         elif function in ('timestamp-newer', 'make'):
             function = self._changed_timestamp_newer
-            copy_function = self._copy_from_cache
+            self.cache_timestamp_newer = True
         elif function == 'timestamp-match':
             function = self._changed_timestamp_match
         elif not callable(function):
@@ -1490,19 +1665,16 @@ class Base(SubstitutionEnvironment):
         self.decide_target = function
         self.decide_source = function
 
-        self.copy_from_cache = copy_function
-
 
     def Detect(self, progs):
-        """Return the first available program in progs.
+        """Return the first available program from one or more possibilities.
 
-        :param progs: one or more command names to check for
-        :type progs: str or list
-        :returns str: first name from progs that can be found.
+        Args:
+            progs (str or list): one or more command names to check for
 
         """
-        if not SCons.Util.is_List(progs):
-            progs = [ progs ]
+        if not is_List(progs):
+            progs = [progs]
         for prog in progs:
             path = self.WhereIs(prog)
             if path: return prog
@@ -1510,7 +1682,7 @@ class Base(SubstitutionEnvironment):
 
 
     def Dictionary(self, *args):
-        """Return construction variables from an environment.
+        r"""Return construction variables from an environment.
 
         Args:
           \*args (optional): variable names to look up
@@ -1538,10 +1710,10 @@ class Base(SubstitutionEnvironment):
         Args:
           key (optional): if None, format the whole dict of variables.
             Else format the value of `key` (Default value = None)
-          format (optional): specify the format to serialize to.
+          format (str, optional): specify the format to serialize to.
             `"pretty"` generates a pretty-printed string,
             `"json"` a JSON-formatted string.
-            (Default value = None, equivalent to `"pretty"`)
+            (Default value = `"pretty"`)
 
         """
         if key:
@@ -1587,31 +1759,38 @@ class Base(SubstitutionEnvironment):
         prefix = self.subst('$'+prefix)
 
         for path in paths:
-            dir,name = os.path.split(str(path))
+            name = os.path.basename(str(path))
             if name[:len(prefix)] == prefix and name[-len(suffix):] == suffix:
                 return path
 
-    def ParseConfig(self, command, function=None, unique=1):
-        """
-        Use the specified function to parse the output of the command
-        in order to modify the current environment.  The 'command' can
-        be a string or a list of strings representing a command and
-        its arguments.  'Function' is an optional argument that takes
-        the environment, the output of the command, and the unique flag.
-        If no function is specified, MergeFlags, which treats the output
-        as the result of a typical 'X-config' command (i.e. gtk-config),
-        will merge the output into the appropriate variables.
+
+    def ParseConfig(self, command, function=None, unique=True):
+        """Parse the result of running a command to update construction vars.
+
+        Use ``function`` to parse the output of running ``command``
+        in order to modify the current environment.
+
+        Args:
+            command: a string or a list of strings representing a command
+              and its arguments.
+            function: called to process the result of ``command``, which will
+              be passed as ``args``.  If ``function`` is omitted or ``None``,
+              :meth:`MergeFlags` is used. Takes 3 args ``(env, args, unique)``
+            unique: whether no duplicate values are allowed (default true)
         """
         if function is None:
+
             def parse_conf(env, cmd, unique=unique):
                 return env.MergeFlags(cmd, unique)
+
             function = parse_conf
-        if SCons.Util.is_List(command):
+        if is_List(command):
             command = ' '.join(command)
         command = self.subst(command)
-        return function(self, self.backtick(command))
+        return function(self, self.backtick(command), unique)
 
-    def ParseDepends(self, filename, must_exist=None, only_one=0):
+
+    def ParseDepends(self, filename, must_exist=None, only_one=False):
         """
         Parse a mkdep-style file for explicit dependencies.  This is
         completely abusable, and should be unnecessary in the "normal"
@@ -1624,7 +1803,7 @@ class Base(SubstitutionEnvironment):
         filename = self.subst(filename)
         try:
             with open(filename, 'r') as fp:
-                lines = SCons.Util.LogicalLines(fp).readlines()
+                lines = LogicalLines(fp).readlines()
         except IOError:
             if must_exist:
                 raise
@@ -1656,79 +1835,82 @@ class Base(SubstitutionEnvironment):
         return SCons.Platform.Platform(platform)(self)
 
     def Prepend(self, **kw):
-        """Prepend values to existing construction variables
-        in an Environment.
+        """Prepend values to construction variables in an Environment.
+
+        The variable is created if it is not already present.
         """
+
         kw = copy_non_reserved_keywords(kw)
         for key, val in kw.items():
-            # It would be easier on the eyes to write this using
-            # "continue" statements whenever we finish processing an item,
-            # but Python 1.5.2 apparently doesn't let you use "continue"
-            # within try:-except: blocks, so we have to nest our code.
+            if key == 'CPPDEFINES':
+                _add_cppdefines(self._dict, val, prepend=True)
+                continue
             try:
                 orig = self._dict[key]
             except KeyError:
-                # No existing variable in the environment, so just set
-                # it to the new value.
+                # No existing var in the environment so set to the new value.
                 self._dict[key] = val
+                continue
+
+            try:
+                # Check if the original looks like a dict: has .update?
+                update_dict = orig.update
+            except AttributeError:
+                try:
+                    # Just try to add them together.  This will work
+                    # in most cases, when the original and new values
+                    # are compatible types.
+                    self._dict[key] = val + orig
+                except (KeyError, TypeError):
+                    try:
+                        # Check if the added value is a list: has .append?
+                        add_to_val = val.append
+                    except AttributeError:
+                        # The added value isn't a list, but the
+                        # original is (by process of elimination),
+                        # so insert the the new value in the original
+                        # (if there's one to insert).
+                        if val:
+                            orig.insert(0, val)
+                    else:
+                        # The added value is a list, so append
+                        # the original to it (if there's a value
+                        # to append) and replace the original.
+                        if orig:
+                            add_to_val(orig)
+                        self._dict[key] = val
+                continue
+
+            # The original looks like a dictionary, so update it
+            # based on what we think the value looks like.
+            # We can't just try adding the value because
+            # dictionaries don't have __add__() methods, and
+            # things like UserList will incorrectly coerce the
+            # original dict to a list (which we don't want).
+            if is_List(val):
+                for v in val:
+                    orig[v] = None
             else:
                 try:
-                    # Check if the original looks like a dictionary.
-                    # If it is, we can't just try adding the value because
-                    # dictionaries don't have __add__() methods, and
-                    # things like UserList will incorrectly coerce the
-                    # original dict to a list (which we don't want).
-                    update_dict = orig.update
-                except AttributeError:
-                    try:
-                        # Most straightforward:  just try to add them
-                        # together.  This will work in most cases, when the
-                        # original and new values are of compatible types.
-                        self._dict[key] = val + orig
-                    except (KeyError, TypeError):
-                        try:
-                            # Check if the added value is a list.
-                            add_to_val = val.append
-                        except AttributeError:
-                            # The added value isn't a list, but the
-                            # original is (by process of elimination),
-                            # so insert the the new value in the original
-                            # (if there's one to insert).
-                            if val:
-                                orig.insert(0, val)
-                        else:
-                            # The added value is a list, so append
-                            # the original to it (if there's a value
-                            # to append).
-                            if orig:
-                                add_to_val(orig)
-                            self._dict[key] = val
-                else:
-                    # The original looks like a dictionary, so update it
-                    # based on what we think the value looks like.
-                    if SCons.Util.is_List(val):
-                        for v in val:
-                            orig[v] = None
+                    update_dict(val)
+                except (AttributeError, TypeError, ValueError):
+                    if is_Dict(val):
+                        for k, v in val.items():
+                            orig[k] = v
                     else:
-                        try:
-                            update_dict(val)
-                        except (AttributeError, TypeError, ValueError):
-                            if SCons.Util.is_Dict(val):
-                                for k, v in val.items():
-                                    orig[k] = v
-                            else:
-                                orig[val] = None
+                        orig[val] = None
+
         self.scanner_map_delete(kw)
 
-    def PrependENVPath(self, name, newpath, envname = 'ENV', sep = os.pathsep,
-                       delete_existing=1):
-        """Prepend path elements to the path 'name' in the 'ENV'
+    def PrependENVPath(self, name, newpath, envname='ENV',
+                       sep=os.pathsep, delete_existing=True):
+        """Prepend path elements to the path *name* in the *envname*
         dictionary for this environment.  Will only add any particular
         path once, and will normpath and normcase all paths to help
         assure this.  This can also handle the case where the env
         variable is a list instead of a string.
 
-        If delete_existing is 0, a newpath which is already in the path
+        If *delete_existing* is False, a *newpath* component already in the path
         will not be moved to the front (it will be left where it is).
         """
 
@@ -1736,7 +1918,7 @@ class Base(SubstitutionEnvironment):
         if envname in self._dict and name in self._dict[envname]:
             orig = self._dict[envname][name]
 
-        nv = SCons.Util.PrependPath(orig, newpath, sep, delete_existing,
+        nv = PrependPath(orig, newpath, sep, delete_existing,
                                     canonicalize=self._canonicalize)
 
         if envname not in self._dict:
@@ -1744,24 +1926,26 @@ class Base(SubstitutionEnvironment):
 
         self._dict[envname][name] = nv
 
-    def PrependUnique(self, delete_existing=0, **kw):
+    def PrependUnique(self, delete_existing=False, **kw):
         """Prepend values to existing construction variables
         in an Environment, if they're not already there.
-        If delete_existing is 1, removes existing values first, so
+        If delete_existing is True, removes existing values first, so
         values move to front.
         """
         kw = copy_non_reserved_keywords(kw)
         for key, val in kw.items():
-            if SCons.Util.is_List(val):
+            if key == 'CPPDEFINES':
+                _add_cppdefines(self._dict, val, unique=True, prepend=True, delete_existing=delete_existing)
+                continue
+            if is_List(val):
                 val = _delete_duplicates(val, not delete_existing)
             if key not in self._dict or self._dict[key] in ('', None):
                 self._dict[key] = val
-            elif SCons.Util.is_Dict(self._dict[key]) and \
-                 SCons.Util.is_Dict(val):
+            elif is_Dict(self._dict[key]) and is_Dict(val):
                 self._dict[key].update(val)
-            elif SCons.Util.is_List(val):
+            elif is_List(val):
                 dk = self._dict[key]
-                if not SCons.Util.is_List(dk):
+                if not is_List(dk):
                     dk = [dk]
                 if delete_existing:
                     dk = [x for x in dk if x not in val]
@@ -1770,7 +1954,7 @@ class Base(SubstitutionEnvironment):
                 self._dict[key] = val + dk
             else:
                 dk = self._dict[key]
-                if SCons.Util.is_List(dk):
+                if is_List(dk):
                     # By elimination, val is not a list.  Since dk is a
                     # list, wrap val in a list first.
                     if delete_existing:
@@ -1834,35 +2018,43 @@ class Base(SubstitutionEnvironment):
     def _find_toolpath_dir(self, tp):
         return self.fs.Dir(self.subst(tp)).srcnode().get_abspath()
 
-    def Tool(self, tool, toolpath=None, **kw):
-        if SCons.Util.is_String(tool):
+    def Tool(self, tool, toolpath=None, **kwargs) -> SCons.Tool.Tool:
+        """Find and run tool module *tool*.
+
+        .. versionchanged:: 4.2
+           returns the tool module rather than ``None``.
+        """
+        if is_String(tool):
             tool = self.subst(tool)
             if toolpath is None:
                 toolpath = self.get('toolpath', [])
             toolpath = list(map(self._find_toolpath_dir, toolpath))
-            tool = SCons.Tool.Tool(tool, toolpath, **kw)
+            tool = SCons.Tool.Tool(tool, toolpath, **kwargs)
         tool(self)
+        return tool
 
-    def WhereIs(self, prog, path=None, pathext=None, reject=[]):
-        """Find prog in the path.
-        """
+    def WhereIs(self, prog, path=None, pathext=None, reject=None):
+        """Find prog in the path. """
+        if not prog:  # nothing to search for, just give up
+            return None
         if path is None:
             try:
                 path = self['ENV']['PATH']
             except KeyError:
                 pass
-        elif SCons.Util.is_String(path):
+        elif is_String(path):
             path = self.subst(path)
         if pathext is None:
             try:
                 pathext = self['ENV']['PATHEXT']
             except KeyError:
                 pass
-        elif SCons.Util.is_String(pathext):
+        elif is_String(pathext):
             pathext = self.subst(pathext)
-        prog = SCons.Util.CLVar(self.subst(prog)) # support "program --with-args"
-        path = SCons.Util.WhereIs(prog[0], path, pathext, reject)
-        if path: return path
+        prog = CLVar(self.subst(prog))  # support "program --with-args"
+        path = WhereIs(prog[0], path, pathext, reject)
+        if path:
+            return path
         return None
 
     #######################################################################
@@ -1875,7 +2067,7 @@ class Base(SubstitutionEnvironment):
 
     def Action(self, *args, **kw):
         def subst_string(a, self=self):
-            if SCons.Util.is_String(a):
+            if is_String(a):
                 a = self.subst(a)
             return a
         nargs = list(map(subst_string, args))
@@ -1904,7 +2096,7 @@ class Base(SubstitutionEnvironment):
 
     def Alias(self, target, source=[], action=None, **kw):
         tlist = self.arg2nodes(target, self.ans.Alias)
-        if not SCons.Util.is_List(source):
+        if not is_List(source):
             source = [source]
         source = [_f for _f in source if _f]
 
@@ -1967,11 +2159,20 @@ class Base(SubstitutionEnvironment):
         nkw = self.subst_kw(kw)
         return SCons.Builder.Builder(**nkw)
 
-    def CacheDir(self, path):
-        import SCons.CacheDir
+    def CacheDir(self, path, custom_class=None):
         if path is not None:
             path = self.subst(path)
         self._CacheDir_path = path
+
+        if custom_class:
+            self['CACHEDIR_CLASS'] = self.validate_CacheDir_class(custom_class)
+
+        if SCons.Action.execute_actions:
+            # Only initialize the CacheDir if  -n/-no_exec was NOT specified.
+            # Now initialized the CacheDir and prevent a race condition which can
+            # happen when there's no existing cache dir and you are building with
+            # multiple threads, but initializing it before the task walk starts
+            self.get_CacheDir()
 
     def Clean(self, targets, files):
         global CleanTargets
@@ -2052,7 +2253,7 @@ class Base(SubstitutionEnvironment):
         """
         """
         s = self.subst(name)
-        if SCons.Util.is_Sequence(s):
+        if is_Sequence(s):
             result=[]
             for e in s:
                 result.append(self.fs.Dir(e, *args, **kw))
@@ -2061,7 +2262,7 @@ class Base(SubstitutionEnvironment):
 
     def PyPackageDir(self, modulename):
         s = self.subst(modulename)
-        if SCons.Util.is_Sequence(s):
+        if is_Sequence(s):
             result=[]
             for e in s:
                 result.append(self.fs.PyPackageDir(e))
@@ -2090,7 +2291,7 @@ class Base(SubstitutionEnvironment):
         """
         """
         s = self.subst(name)
-        if SCons.Util.is_Sequence(s):
+        if is_Sequence(s):
             result=[]
             for e in s:
                 result.append(self.fs.Entry(e, *args, **kw))
@@ -2118,7 +2319,7 @@ class Base(SubstitutionEnvironment):
         """
         """
         s = self.subst(name)
-        if SCons.Util.is_Sequence(s):
+        if is_Sequence(s):
             result=[]
             for e in s:
                 result.append(self.fs.File(e, *args, **kw))
@@ -2131,11 +2332,11 @@ class Base(SubstitutionEnvironment):
         return SCons.Node.FS.find_file(file, tuple(nodes))
 
     def Flatten(self, sequence):
-        return SCons.Util.flatten(sequence)
+        return flatten(sequence)
 
     def GetBuildPath(self, files):
         result = list(map(str, self.arg2nodes(files, self.fs.Entry)))
-        if SCons.Util.is_List(files):
+        if is_List(files):
             return result
         else:
             return result[0]
@@ -2199,13 +2400,13 @@ class Base(SubstitutionEnvironment):
     def Scanner(self, *args, **kw):
         nargs = []
         for arg in args:
-            if SCons.Util.is_String(arg):
+            if is_String(arg):
                 arg = self.subst(arg)
             nargs.append(arg)
         nkw = self.subst_kw(kw)
-        return SCons.Scanner.Base(*nargs, **nkw)
+        return SCons.Scanner.ScannerBase(*nargs, **nkw)
 
-    def SConsignFile(self, name=".sconsign", dbm_module=None):
+    def SConsignFile(self, name=SCons.SConsign.current_sconsign_filename(), dbm_module=None):
         if name is not None:
             name = self.subst(name)
             if not os.path.isabs(name):
@@ -2223,15 +2424,21 @@ class Base(SubstitutionEnvironment):
         side_effects = self.arg2nodes(side_effect, self.fs.Entry)
         targets = self.arg2nodes(target, self.fs.Entry)
 
+        added_side_effects = []
         for side_effect in side_effects:
             if side_effect.multiple_side_effect_has_builder():
                 raise UserError("Multiple ways to build the same target were specified for: %s" % str(side_effect))
             side_effect.add_source(targets)
             side_effect.side_effect = 1
             self.Precious(side_effect)
+            added = False
             for target in targets:
-                target.side_effects.append(side_effect)
-        return side_effects
+                if side_effect not in target.side_effects:
+                    target.side_effects.append(side_effect)
+                    added = True
+            if added:
+                added_side_effects.append(side_effect)
+        return added_side_effects
 
     def Split(self, arg):
         """This function converts a string or list into a list of strings
@@ -2247,15 +2454,18 @@ class Base(SubstitutionEnvironment):
 
         In all cases, the function returns a list of Nodes and strings."""
 
-        if SCons.Util.is_List(arg):
+        if is_List(arg):
             return list(map(self.subst, arg))
-        elif SCons.Util.is_String(arg):
+        elif is_String(arg):
             return self.subst(arg).split()
         else:
             return [self.subst(arg)]
 
     def Value(self, value, built_value=None, name=None):
-        """
+        """Return a Value (Python expression) node.
+
+        .. versionchanged:: 4.0
+           the *name* parameter was added.
         """
         return SCons.Node.Python.ValueWithMemo(value, built_value, name)
 
@@ -2264,9 +2474,8 @@ class Base(SubstitutionEnvironment):
         src_dir = self.arg2nodes(src_dir, self.fs.Dir)[0]
         self.fs.VariantDir(variant_dir, src_dir, duplicate)
 
-    def FindSourceFiles(self, node='.'):
-        """ returns a list of all source files.
-        """
+    def FindSourceFiles(self, node='.') -> list:
+        """Return a list of all source files."""
         node = self.arg2nodes(node, self.fs.Entry)[0]
 
         sources = []
@@ -2293,7 +2502,7 @@ class Base(SubstitutionEnvironment):
         """
         from SCons.Tool import install
         if install._UNIQUE_INSTALLED_FILES is None:
-            install._UNIQUE_INSTALLED_FILES = SCons.Util.uniquer_hashables(install._INSTALLED_FILES)
+            install._UNIQUE_INSTALLED_FILES = uniquer_hashables(install._INSTALLED_FILES)
         return install._UNIQUE_INSTALLED_FILES
 
 
@@ -2318,10 +2527,13 @@ class OverrideEnvironment(Base):
     values from the overrides dictionary.
     """
 
-    def __init__(self, subject, overrides={}):
+    def __init__(self, subject, overrides=None):
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Environment.OverrideEnvironment')
         self.__dict__['__subject'] = subject
-        self.__dict__['overrides'] = overrides
+        if overrides is None:
+            self.__dict__['overrides'] = {}
+        else:
+            self.__dict__['overrides'] = overrides
 
     # Methods that make this class act like a proxy.
     def __getattr__(self, name):
@@ -2334,7 +2546,7 @@ class OverrideEnvironment(Base):
         # Environment they are being constructed with and so will not
         # have access to overrided values. So we rebuild them with the
         # OverrideEnvironment so they have access to overrided values.
-        if isinstance(attr, (MethodWrapper, BuilderWrapper)):
+        if isinstance(attr, MethodWrapper):
             return attr.clone(self)
         else:
             return attr
@@ -2376,23 +2588,20 @@ class OverrideEnvironment(Base):
         except KeyError:
             return self.__dict__['__subject'].get(key, default)
 
-    def has_key(self, key):
-        """Emulates the has_key() method of dictionaries."""
-        try:
-            self.__dict__['overrides'][key]
-            return 1
-        except KeyError:
-            return key in self.__dict__['__subject']
-
     def __contains__(self, key):
-        if self.__dict__['overrides'].__contains__(key):
-            return 1
-        return self.__dict__['__subject'].__contains__(key)
+        if key in self.__dict__['overrides']:
+            return True
+        return key in self.__dict__['__subject']
 
-    def Dictionary(self):
+    def Dictionary(self, *args):
         d = self.__dict__['__subject'].Dictionary().copy()
         d.update(self.__dict__['overrides'])
-        return d
+        if not args:
+            return d
+        dlist = [d[x] for x in args]
+        if len(dlist) == 1:
+            dlist = dlist[0]
+        return dlist
 
     def items(self):
         """Emulates the items() method of dictionaries."""
@@ -2406,12 +2615,27 @@ class OverrideEnvironment(Base):
         """Emulates the values() method of dictionaries."""
         return self.Dictionary().values()
 
+    def setdefault(self, key, default=None):
+        """Emulates the setdefault() method of dictionaries."""
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            self.__dict__['overrides'][key] = default
+            return default
+
     # Overridden private construction environment methods.
-    def _update(self, dict):
-        """Update an environment's values directly, bypassing the normal
-        checks that occur when users try to set items.
+    def _update(self, other):
+        self.__dict__['overrides'].update(other)
+
+    def _update_onlynew(self, other):
+        """Update a dict with new keys.
+
+        Unlike the .update method, if the key is already present,
+        it is not replaced.
         """
-        self.__dict__['overrides'].update(dict)
+        for k, v in other.items():
+            if k not in self.__dict__['overrides']:
+                self.__dict__['overrides'][k] = v
 
     def gvars(self):
         return self.__dict__['__subject'].gvars()
@@ -2453,28 +2677,35 @@ def NoSubstitutionProxy(subject):
     class _NoSubstitutionProxy(Environment):
         def __init__(self, subject):
             self.__dict__['__subject'] = subject
+
         def __getattr__(self, name):
             return getattr(self.__dict__['__subject'], name)
+
         def __setattr__(self, name, value):
             return setattr(self.__dict__['__subject'], name, value)
+
         def executor_to_lvars(self, kwdict):
             if 'executor' in kwdict:
                 kwdict['lvars'] = kwdict['executor'].get_lvars()
                 del kwdict['executor']
             else:
                 kwdict['lvars'] = {}
-        def raw_to_mode(self, dict):
+
+        def raw_to_mode(self, mapping):
             try:
-                raw = dict['raw']
+                raw = mapping['raw']
             except KeyError:
                 pass
             else:
-                del dict['raw']
-                dict['mode'] = raw
+                del mapping['raw']
+                mapping['mode'] = raw
+
         def subst(self, string, *args, **kwargs):
             return string
+
         def subst_kw(self, kw, *args, **kwargs):
             return kw
+
         def subst_list(self, string, *args, **kwargs):
             nargs = (string, self,) + args
             nkw = kwargs.copy()
@@ -2482,6 +2713,7 @@ def NoSubstitutionProxy(subject):
             self.executor_to_lvars(nkw)
             self.raw_to_mode(nkw)
             return SCons.Subst.scons_subst_list(*nargs, **nkw)
+
         def subst_target_source(self, string, *args, **kwargs):
             nargs = (string, self,) + args
             nkw = kwargs.copy()
@@ -2489,6 +2721,7 @@ def NoSubstitutionProxy(subject):
             self.executor_to_lvars(nkw)
             self.raw_to_mode(nkw)
             return SCons.Subst.scons_subst(*nargs, **nkw)
+
     return _NoSubstitutionProxy(subject)
 
 # Local Variables:

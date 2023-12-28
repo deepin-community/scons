@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,9 +22,6 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 """
 Verify that the sconsign script works when using a .sconsign file in
@@ -33,16 +32,20 @@ value of Decider('timestamp-newer').
 import TestSCons
 import TestSConsign
 
-_python_ = TestSCons._python_
+from TestSCons import _python_
+from TestCmd import NEED_HELPER
 
 test = TestSConsign.TestSConsign(match = TestSConsign.match_re)
+
+if NEED_HELPER:
+    test.skip_test("Test host cannot directly execute scripts, skipping test\n")
 
 # Note:  We don't use os.path.join() representations of the file names
 # in the expected output because paths in the .sconsign files are
 # canonicalized to use / as the separator.
 
-sub1_hello_c    = 'sub1/hello.c'
-sub1_hello_obj  = 'sub1/hello.obj'
+sub1_hello_c = 'sub1/hello.c'
+sub1_hello_obj = 'sub1/hello.obj'
 
 test.subdir('sub1', 'sub2')
 
@@ -59,7 +62,9 @@ test.subdir('sub1', 'sub2')
 fake_cc_py = test.workpath('fake_cc.py')
 fake_link_py = test.workpath('fake_link.py')
 
-test.write(fake_cc_py, r"""#!%(_python_)s
+test.write(
+    fake_cc_py,
+    fr"""#!{_python_}
 import os
 import re
 import sys
@@ -86,40 +91,56 @@ def process(infp, outfp):
             outfp.write(line)
 
 with open(sys.argv[2], 'w') as outf, open(sys.argv[3], 'r') as ifp:
-    outf.write('fake_cc.py:  %%s\n' %% sys.argv)
+    outf.write('fake_cc.py:  %s\n' % sys.argv)
     process(ifp, outf)
 
 sys.exit(0)
-""" % locals())
+""",
+)
 
-test.write(fake_link_py, r"""#!%(_python_)s
+test.write(
+    fake_link_py,
+    fr"""#!{_python_}
 import sys
 
 with open(sys.argv[1], 'w') as outf, open(sys.argv[2], 'r') as ifp:
-    outf.write('fake_link.py:  %%s\n' %% sys.argv)
+    outf.write('fake_link.py:  %s\n' % sys.argv)
     outf.write(ifp.read())
 
 sys.exit(0)
-""" % locals())
+""",
+)
 
 test.chmod(fake_cc_py, 0o755)
 test.chmod(fake_link_py, 0o755)
 
-test.write('SConstruct', """
+test.write(
+    'SConstruct',
+    f"""
 SConsignFile(None)
 Decider('timestamp-newer')
-env1 = Environment(PROGSUFFIX = '.exe',
-                   OBJSUFFIX = '.obj',
-                   # Specify the command lines with lists-of-lists so
-                   # finding the implicit dependencies works even with
-                   # spaces in the fake_*_py path names.
-                   CCCOM = [[r'%(fake_cc_py)s', 'sub2', '$TARGET', '$SOURCE']],
-                   LINKCOM = [[r'%(fake_link_py)s', '$TARGET', '$SOURCE']])
+env1 = Environment(
+    PROGSUFFIX='.exe',
+    OBJSUFFIX='.obj',
+    # Specify the command lines with lists-of-lists so
+    # finding the implicit dependencies works even with
+    # spaces in the fake_*_py path names.
+    CCCOM=[[r'{fake_cc_py}', 'sub2', '$TARGET', '$SOURCE']],
+    LINKCOM=[[r'{fake_link_py}', '$TARGET', '$SOURCE']],
+)
 env1.PrependENVPath('PATHEXT', '.PY')
 env1.Program('sub1/hello.c')
-env2 = env1.Clone(CPPPATH = ['sub2'])
+env2 = env1.Clone(CPPPATH=['sub2'])
 env2.Program('sub2/hello.c')
-""" % locals())
+""",
+)
+# TODO in the above, we would normally want to run a python program
+# using "our Python" like this:
+#    CCCOM=[[r'{_python_}', r'{fake_cc_py}', 'sub2', '$TARGET', '$SOURCE']],
+#    LINKCOM=[[r'{_python_}', r'{fake_link_py}', '$TARGET', '$SOURCE']],
+# however we're looking at dependencies with sconsign, so that breaks things.
+# It still breaks things on Windows if something else is registered as the
+# handler for .py files, as Visual Studio Code installs itself.
 
 test.write(['sub1', 'hello.c'], r"""\
 sub1/hello.c
@@ -139,15 +160,16 @@ test.write(['sub2', 'inc2.h'], r"""\
 #define STRING2 "inc2.h"
 """)
 
-test.sleep()
-
+test.sleep()  # delay for timestamps
 test.run(arguments = '. --max-drift=1')
 
-sig_re = r'[0-9a-fA-F]{32}'
+sig_re = r'[0-9a-fA-F]{32,64}'
 date_re = r'\S+ \S+ [ \d]\d \d\d:\d\d:\d\d \d\d\d\d'
+database_name = test.get_sconsignname()
 
-test.run_sconsign(arguments = "-e hello.exe -e hello.obj sub1/.sconsign",
-         stdout = r"""hello.exe: %(sig_re)s \d+ \d+
+test.run_sconsign(
+    arguments=f"-e hello.exe -e hello.obj sub1/{database_name}",
+    stdout=r"""hello.exe: %(sig_re)s \d+ \d+
         %(sub1_hello_obj)s: %(sig_re)s \d+ \d+
         fake_link\.py: None \d+ \d+
         %(sig_re)s \[.*\]
@@ -155,10 +177,12 @@ hello.obj: %(sig_re)s \d+ \d+
         %(sub1_hello_c)s: None \d+ \d+
         fake_cc\.py: None \d+ \d+
         %(sig_re)s \[.*\]
-""" % locals())
+""" % locals(),
+)
 
-test.run_sconsign(arguments = "-e hello.exe -e hello.obj -r sub1/.sconsign",
-         stdout = r"""hello.exe: %(sig_re)s '%(date_re)s' \d+
+test.run_sconsign(
+    arguments=f"-e hello.exe -e hello.obj -r sub1/{database_name}",
+    stdout=r"""hello.exe: %(sig_re)s '%(date_re)s' \d+
         %(sub1_hello_obj)s: %(sig_re)s '%(date_re)s' \d+
         fake_link\.py: None '%(date_re)s' \d+
         %(sig_re)s \[.*\]
@@ -166,7 +190,8 @@ hello.obj: %(sig_re)s '%(date_re)s' \d+
         %(sub1_hello_c)s: None '%(date_re)s' \d+
         fake_cc\.py: None '%(date_re)s' \d+
         %(sig_re)s \[.*\]
-""" % locals())
+""" % locals(),
+)
 
 test.pass_test()
 

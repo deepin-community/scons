@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,11 +20,7 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import sys
 import unittest
 
 import TestSCons
@@ -44,16 +41,12 @@ class Environment:
     def __getitem__(self, key):
         return self.dict[key]
     def __contains__(self, key):
-        return self.dict.__contains__(key)
-    def has_key(self, key):
         return key in self.dict
-
-
 
 
 def check(key, value, env):
     assert int(value) == 6 * 9, "key %s = %s" % (key, repr(value))
-    
+
 # Check saved option file by executing and comparing against
 # the expected dictionary
 def checkSave(file, expected):
@@ -145,7 +138,7 @@ class VariablesTestCase(unittest.TestCase):
         test = TestSCons.TestSCons()
         file = test.workpath('custom.py')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "42",
@@ -166,7 +159,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=54')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "42",
@@ -194,7 +187,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=42')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "10",
@@ -215,7 +208,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=10')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "12",
@@ -236,7 +229,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=10')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "12",
@@ -254,7 +247,7 @@ class VariablesTestCase(unittest.TestCase):
         test = TestSCons.TestSCons()
         file = test.workpath('custom.py')
         opts = SCons.Variables.Variables(file)
-        
+
         opts.Add('ANSWER',
                  help='THE answer to THE question',
                  converter=str)
@@ -289,9 +282,9 @@ class VariablesTestCase(unittest.TestCase):
         nopts = SCons.Variables.Variables()
 
         # Ensure that both attributes are initialized to
-        # an empty list and dict, respectively. 
+        # an empty list and dict, respectively.
         assert len(nopts.files) == 0
-        assert len(nopts.args) == 0        
+        assert len(nopts.args) == 0
 
     def test_args(self):
         """Test updating an Environment with arguments overridden"""
@@ -302,7 +295,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=42')
         opts = SCons.Variables.Variables(file, {'ANSWER':54})
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "42",
@@ -322,7 +315,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=54')
         opts = SCons.Variables.Variables(file, {'ANSWER':42})
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "54",
@@ -339,7 +332,7 @@ class VariablesTestCase(unittest.TestCase):
         file = test.workpath('custom.py')
         test.write('custom.py', 'ANSWER=54')
         opts = SCons.Variables.Variables(file, {'ANSWER':54})
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "54",
@@ -361,7 +354,7 @@ class VariablesTestCase(unittest.TestCase):
             if val in [1, 'y']: val = 1
             if val in [0, 'n']: val = 0
             return val
-        
+
         # test saving out empty file
         opts.Add('OPT_VAL',
                  'An option to test',
@@ -407,11 +400,11 @@ class VariablesTestCase(unittest.TestCase):
                 self.x = x
             def __str__(self):
                 return self.x
-            
+
         test = TestSCons.TestSCons()
         cache_file = test.workpath('cached.options')
         opts = SCons.Variables.Variables()
-        
+
         opts.Add('THIS_USED_TO_BREAK',
                  'An option to test',
                  "Default")
@@ -419,11 +412,11 @@ class VariablesTestCase(unittest.TestCase):
         opts.Add('THIS_ALSO_BROKE',
                  'An option to test',
                  "Default2")
-        
+
         opts.Add('THIS_SHOULD_WORK',
                  'An option to test',
                  Foo('bar'))
-        
+
         env = Environment()
         opts.Update(env, { 'THIS_USED_TO_BREAK' : "Single'Quotes'In'String",
                            'THIS_ALSO_BROKE' : "\\Escape\nSequences\t",
@@ -509,7 +502,10 @@ A: a - alpha test
         assert text == expectAlpha, text
 
         textBackwards = opts.GenerateHelpText(env, sort=lambda x, y: cmp(y, x))
-        assert textBackwards == expectBackwards, "Expected:\n%s\nGot:\n%s\n"%(textBackwards, expectBackwards) 
+        assert textBackwards == expectBackwards, "Expected:\n%s\nGot:\n%s\n" % (
+            textBackwards,
+            expectBackwards,
+        )
 
     def test_FormatVariableHelpText(self):
         """Test generating custom format help text"""
@@ -557,7 +553,7 @@ B 42 54 b - alpha test ['B']
 """
         text = opts.GenerateHelpText(env, sort=cmp)
         assert text == expectAlpha, text
-        
+
     def test_Aliases(self):
         """Test option aliases"""
         # test alias as a tuple
@@ -567,17 +563,17 @@ B 42 54 b - alpha test ['B']
                  'THE answer to THE question',
                  "42"),
                 )
-        
+
         env = Environment()
         opts.Update(env, {'ANSWER' : 'answer'})
-        
+
         assert 'ANSWER' in env
-        
+
         env = Environment()
         opts.Update(env, {'ANSWERALIAS' : 'answer'})
-        
+
         assert 'ANSWER' in env and 'ANSWERALIAS' not in env
-        
+
         # test alias as a list
         opts = SCons.Variables.Variables()
         opts.AddVariables(
@@ -585,17 +581,16 @@ B 42 54 b - alpha test ['B']
                  'THE answer to THE question',
                  "42"),
                 )
-        
+
         env = Environment()
         opts.Update(env, {'ANSWER' : 'answer'})
-        
+
         assert 'ANSWER' in env
-        
+
         env = Environment()
         opts.Update(env, {'ANSWERALIAS' : 'answer'})
-        
-        assert 'ANSWER' in env and 'ANSWERALIAS' not in env
 
+        assert 'ANSWER' in env and 'ANSWERALIAS' not in env
 
 
 class UnknownVariablesTestCase(unittest.TestCase):
@@ -603,7 +598,7 @@ class UnknownVariablesTestCase(unittest.TestCase):
     def test_unknown(self):
         """Test the UnknownVariables() method"""
         opts = SCons.Variables.Variables()
-        
+
         opts.Add('ANSWER',
                  'THE answer to THE question',
                  "42")
@@ -619,38 +614,38 @@ class UnknownVariablesTestCase(unittest.TestCase):
         r = opts.UnknownVariables()
         assert r == {'UNKNOWN' : 'unknown'}, r
         assert env['ANSWER'] == 'answer', env['ANSWER']
-        
+
     def test_AddOptionUpdatesUnknown(self):
         """Test updating of the 'unknown' dict"""
         opts = SCons.Variables.Variables()
-        
+
         opts.Add('A',
                  'A test variable',
                  "1")
-        
+
         args = {
             'A'             : 'a',
             'ADDEDLATER'    : 'notaddedyet',
         }
-        
+
         env = Environment()
         opts.Update(env,args)
-        
+
         r = opts.UnknownVariables()
         assert r == {'ADDEDLATER' : 'notaddedyet'}, r
         assert env['A'] == 'a', env['A']
-        
+
         opts.Add('ADDEDLATER',
                  'An option not present initially',
                  "1")
-                 
+
         args = {
             'A'             : 'a',
             'ADDEDLATER'    : 'added',
         }
-        
+
         opts.Update(env, args)
-        
+
         r = opts.UnknownVariables()
         assert len(r) == 0, r
         assert env['ADDEDLATER'] == 'added', env['ADDEDLATER']
@@ -658,33 +653,33 @@ class UnknownVariablesTestCase(unittest.TestCase):
     def test_AddOptionWithAliasUpdatesUnknown(self):
         """Test updating of the 'unknown' dict (with aliases)"""
         opts = SCons.Variables.Variables()
-        
+
         opts.Add('A',
                  'A test variable',
                  "1")
-        
+
         args = {
             'A'                 : 'a',
             'ADDEDLATERALIAS'   : 'notaddedyet',
         }
-        
+
         env = Environment()
         opts.Update(env,args)
-        
+
         r = opts.UnknownVariables()
         assert r == {'ADDEDLATERALIAS' : 'notaddedyet'}, r
         assert env['A'] == 'a', env['A']
-        
+
         opts.AddVariables(
             (('ADDEDLATER', 'ADDEDLATERALIAS'),
              'An option not present initially',
              "1"),
             )
-        
+
         args['ADDEDLATERALIAS'] = 'added'
-        
+
         opts.Update(env, args)
-        
+
         r = opts.UnknownVariables()
         assert len(r) == 0, r
         assert env['ADDEDLATER'] == 'added', env['ADDEDLATER']

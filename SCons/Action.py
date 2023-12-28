@@ -1,11 +1,34 @@
-"""SCons.Action
+# MIT License
+#
+# Copyright The SCons Foundation
+#
+# Permission is hereby granted, free of charge, to any person obtaining
+# a copy of this software and associated documentation files (the
+# "Software"), to deal in the Software without restriction, including
+# without limitation the rights to use, copy, modify, merge, publish,
+# distribute, sublicense, and/or sell copies of the Software, and to
+# permit persons to whom the Software is furnished to do so, subject to
+# the following conditions:
+#
+# The above copyright notice and this permission notice shall be included
+# in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-This encapsulates information about executing any sort of action that
+"""SCons Actions.
+
+Information about executing any sort of action that
 can build one or more target Nodes (typically files) from one or more
 source Nodes (also typically files) given a specific Environment.
 
 The base class here is ActionBase.  The base class supplies just a few
-OO utility methods and some generic methods for displaying information
+utility methods and some generic methods for displaying information
 about an Action in response to the various commands that control printing.
 
 A second-level base class is _ActionAction.  This extends ActionBase
@@ -31,7 +54,7 @@ other modules:
 
     get_contents()
         Fetches the "contents" of an Action for signature calculation
-        plus the varlist.  This is what gets MD5 checksummed to decide
+        plus the varlist.  This is what gets checksummed to decide
         if a target needs to be rebuilt because its action changed.
 
     genstring()
@@ -60,7 +83,7 @@ this module:
     get_presig()
         Fetches the "contents" of a subclass for signature calculation.
         The varlist is added to this to produce the Action's contents.
-        TODO(?): Change this to always return ascii/bytes and not unicode (or py3 strings)
+        TODO(?): Change this to always return bytes and not str?
 
     strfunction()
         Returns a substituted string representation of the Action.
@@ -77,40 +100,17 @@ way for wrapping up the functions.
 
 """
 
-# __COPYRIGHT__
-#
-# Permission is hereby granted, free of charge, to any person obtaining
-# a copy of this software and associated documentation files (the
-# "Software"), to deal in the Software without restriction, including
-# without limitation the rights to use, copy, modify, merge, publish,
-# distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so, subject to
-# the following conditions:
-#
-# The above copyright notice and this permission notice shall be included
-# in all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
-# KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
-# WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-# NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-# LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-# WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
 import os
 import pickle
 import re
 import sys
 import subprocess
 from subprocess import DEVNULL
-import itertools
 import inspect
 from collections import OrderedDict
 
 import SCons.Debug
+import SCons.Util
 from SCons.Debug import logInstanceCreation
 import SCons.Errors
 import SCons.Util
@@ -122,9 +122,9 @@ from SCons.Util import is_String, is_List
 class _null:
     pass
 
-print_actions = 1
-execute_actions = 1
-print_actions_presub = 0
+print_actions = True
+execute_actions = True
+print_actions_presub = False
 
 # Use pickle protocol 1 when pickling functions for signature
 # otherwise python3 and python2 will yield different pickles
@@ -145,7 +145,7 @@ def rfile(n):
 def default_exitstatfunc(s):
     return s
 
-strip_quotes = re.compile('^[\'"](.*)[\'"]$')
+strip_quotes = re.compile(r'^[\'"](.*)[\'"]$')
 
 
 def _callable_contents(obj):
@@ -734,26 +734,57 @@ default_ENV = None
 
 
 def get_default_ENV(env):
-    """
-    A fiddlin' little function that has an 'import SCons.Environment' which
-    can't be moved to the top level without creating an import loop.  Since
-    this import creates a local variable named 'SCons', it blocks access to
-    the global variable, so we move it here to prevent complaints about local
-    variables being used uninitialized.
+    """Returns an execution environment.
+
+    If there is one in *env*, just use it, else return the Default
+    Environment, insantiated if necessary.
+
+    A fiddlin' little function that has an ``import SCons.Environment``
+    which cannot be moved to the top level without creating an import
+    loop.  Since this import creates a local variable named ``SCons``,
+    it blocks access to the global variable, so we move it here to
+    prevent complaints about local variables being used uninitialized.
     """
     global default_ENV
+
     try:
         return env['ENV']
     except KeyError:
         if not default_ENV:
             import SCons.Environment
-            # This is a hideously expensive way to get a default shell
+            # This is a hideously expensive way to get a default execution
             # environment.  What it really should do is run the platform
             # setup to get the default ENV.  Fortunately, it's incredibly
-            # rare for an Environment not to have a shell environment, so
-            # we're not going to worry about it overmuch.
+            # rare for an Environment not to have an execution environment,
+            # so we're not going to worry about it overmuch.
             default_ENV = SCons.Environment.Environment()['ENV']
         return default_ENV
+
+
+def _resolve_shell_env(env, target, source):
+    """Returns a resolved execution environment.
+
+    First get the execution environment.  Then if ``SHELL_ENV_GENERATORS``
+    is set and is iterable, call each function to allow it to alter the
+    created execution environment, passing each the returned execution
+    environment from the previous call.
+
+    .. versionadded:: 4.4
+    """
+    ENV = get_default_ENV(env)
+    shell_gen = env.get('SHELL_ENV_GENERATORS')
+    if shell_gen:
+        try:
+            shell_gens = iter(shell_gen)
+        except TypeError:
+            raise SCons.Errors.UserError("SHELL_ENV_GENERATORS must be iteratable.")
+        else:
+            ENV = ENV.copy()
+            for generator in shell_gens:
+                ENV = generator(env, target, source, ENV)
+                if not isinstance(ENV, dict):
+                    raise SCons.Errors.UserError(f"SHELL_ENV_GENERATORS function: {generator} must return a dict.")
+    return ENV
 
 
 def _subproc(scons_env, cmd, error='ignore', **kw):
@@ -771,28 +802,11 @@ def _subproc(scons_env, cmd, error='ignore', **kw):
         if is_String(io) and io == 'devnull':
             kw[stream] = DEVNULL
 
-    # Figure out what shell environment to use
+    # Figure out what execution environment to use
     ENV = kw.get('env', None)
     if ENV is None: ENV = get_default_ENV(scons_env)
 
-    # Ensure that the ENV values are all strings:
-    new_env = {}
-    for key, value in ENV.items():
-        if is_List(value):
-            # If the value is a list, then we assume it is a path list,
-            # because that's a pretty common list-like value to stick
-            # in an environment variable:
-            value = SCons.Util.flatten_sequence(value)
-            new_env[key] = os.pathsep.join(map(str, value))
-        else:
-            # It's either a string or something else.  If it's a string,
-            # we still want to call str() because it might be a *Unicode*
-            # string, which makes subprocess.Popen() gag.  If it isn't a
-            # string or a list, then we just coerce it to a string, which
-            # is the proper way to handle Dir and File instances and will
-            # produce something reasonable for just about everything else:
-            new_env[key] = str(value)
-    kw['env'] = new_env
+    kw['env'] = SCons.Util.sanitize_shell_env(ENV)
 
     try:
         pobj = subprocess.Popen(cmd, **kw)
@@ -800,9 +814,25 @@ def _subproc(scons_env, cmd, error='ignore', **kw):
         if error == 'raise': raise
         # return a dummy Popen instance that only returns error
         class dummyPopen:
-            def __init__(self, e): self.exception = e
-            def communicate(self, input=None): return ('', '')
-            def wait(self): return -self.exception.errno
+            def __init__(self, e):
+                self.exception = e
+            # Add the following two to enable using the return value as a context manager
+            # for example
+            #    with Action._subproc(...) as po:
+            #       logic here which uses po
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def communicate(self, input=None):
+                return ('', '')
+
+            def wait(self):
+                return -self.exception.errno
+
             stdin = None
             class f:
                 def read(self): return ''
@@ -833,7 +863,7 @@ class CommandAction(_ActionAction):
         # variables.
         if SCons.Debug.track_instances: logInstanceCreation(self, 'Action.CommandAction')
 
-        _ActionAction.__init__(self, **kw)
+        super().__init__(**kw)
         if is_List(cmd):
             if [c for c in cmd if is_List(c)]:
                 raise TypeError("CommandAction should be given only "
@@ -845,11 +875,11 @@ class CommandAction(_ActionAction):
             return ' '.join(map(str, self.cmd_list))
         return str(self.cmd_list)
 
-    def process(self, target, source, env, executor=None):
+    def process(self, target, source, env, executor=None, overrides=False):
         if executor:
-            result = env.subst_list(self.cmd_list, 0, executor=executor)
+            result = env.subst_list(self.cmd_list, 0, executor=executor, overrides=overrides)
         else:
-            result = env.subst_list(self.cmd_list, 0, target, source)
+            result = env.subst_list(self.cmd_list, 0, target, source, overrides=overrides)
         silent = None
         ignore = None
         while True:
@@ -866,18 +896,18 @@ class CommandAction(_ActionAction):
             pass
         return result, ignore, silent
 
-    def strfunction(self, target, source, env, executor=None):
+    def strfunction(self, target, source, env, executor=None, overrides=False):
         if self.cmdstr is None:
             return None
         if self.cmdstr is not _null:
             from SCons.Subst import SUBST_RAW
             if executor:
-                c = env.subst(self.cmdstr, SUBST_RAW, executor=executor)
+                c = env.subst(self.cmdstr, SUBST_RAW, executor=executor, overrides=overrides)
             else:
-                c = env.subst(self.cmdstr, SUBST_RAW, target, source)
+                c = env.subst(self.cmdstr, SUBST_RAW, target, source, overrides=overrides)
             if c:
                 return c
-        cmd_list, ignore, silent = self.process(target, source, env, executor)
+        cmd_list, ignore, silent = self.process(target, source, env, executor, overrides=overrides)
         if silent:
             return ''
         return _string_from_cmd_list(cmd_list[0])
@@ -909,7 +939,7 @@ class CommandAction(_ActionAction):
 
         escape = env.get('ESCAPE', lambda x: x)
 
-        ENV = get_default_ENV(env)
+        ENV = _resolve_shell_env(env, target, source)
 
         # Ensure that the ENV values are all strings:
         for key, value in ENV.items():
@@ -968,7 +998,7 @@ class CommandAction(_ActionAction):
         if is_String(icd) and icd[:1] == '$':
             icd = env.subst(icd)
 
-        if not icd or str(icd).lower in ('0', 'none', 'false', 'no', 'off'):
+        if not icd or str(icd).lower() in ('0', 'none', 'false', 'no', 'off'):
             return []
 
         try:
@@ -976,7 +1006,7 @@ class CommandAction(_ActionAction):
         except ValueError:
             icd_int = None
 
-        if (icd_int and icd_int > 1) or icd == 'all':
+        if (icd_int and icd_int > 1) or str(icd).lower() == 'all':
             # An integer value greater than 1 specifies the number of entries
             # to scan. "all" means to scan all.
             return self._get_implicit_deps_heavyweight(target, source, env, executor, icd_int)
@@ -1216,7 +1246,7 @@ class FunctionAction(_ActionAction):
                 # This is weird, just do the best we can.
                 self.funccontents = _object_contents(execfunction)
 
-        _ActionAction.__init__(self, **kw)
+        super().__init__(**kw)
 
     def function_name(self):
         try:

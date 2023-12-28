@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,9 +20,6 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os.path
 import shutil
@@ -98,10 +96,10 @@ class CacheDirTestCase(BaseTestCase):
 
         # Verify how the cachepath() method determines the name
         # of the file in cache.
-        def my_collect(list):
+        def my_collect(list, hash_format=None):
             return list[0]
-        save_collect = SCons.Util.MD5collect
-        SCons.Util.MD5collect = my_collect
+        save_collect = SCons.Util.hash_collect
+        SCons.Util.hash_collect = my_collect
 
         try:
             name = 'a_fake_bsig'
@@ -112,7 +110,7 @@ class CacheDirTestCase(BaseTestCase):
             filename = os.path.join(dirname, name)
             assert result == (dirname, filename), result
         finally:
-            SCons.Util.MD5collect = save_collect
+            SCons.Util.hash_collect = save_collect
 
 class ExceptionTestCase(unittest.TestCase):
     """Test that the correct exceptions are thrown by CacheDir."""
