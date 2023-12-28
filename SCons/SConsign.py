@@ -1,11 +1,6 @@
-"""SCons.SConsign
-
-Writing and reading information to the .sconsign file or files.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -25,25 +20,28 @@ Writing and reading information to the .sconsign file or files.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""Operations on signature database files (.sconsign). """
 
 import SCons.compat
 
 import os
 import pickle
+import time
 
 import SCons.dblite
 import SCons.Warnings
-
 from SCons.compat import PICKLE_PROTOCOL
+from SCons.Util import print_time
 
 
 def corrupt_dblite_warning(filename):
-    SCons.Warnings.warn(SCons.Warnings.CorruptSConsignWarning,
-                        "Ignoring corrupt .sconsign file: %s"%filename)
+    SCons.Warnings.warn(
+        SCons.Warnings.CorruptSConsignWarning,
+        "Ignoring corrupt .sconsign file: %s" % filename,
+    )
 
-SCons.dblite.ignore_corrupt_dbfiles = 1
+SCons.dblite.IGNORE_CORRUPT_DBFILES = True
 SCons.dblite.corruption_warning = corrupt_dblite_warning
 
 # XXX Get rid of the global array so this becomes re-entrant.
@@ -57,12 +55,29 @@ sig_files = []
 # extension the underlying DB module will add).
 DataBase = {}
 DB_Module = SCons.dblite
-DB_Name = ".sconsign"
+DB_Name = None
 DB_sync_list = []
 
+def current_sconsign_filename():
+    hash_format = SCons.Util.get_hash_format()
+    current_hash_algorithm = SCons.Util.get_current_hash_algorithm_used()
+    # if the user left the options defaulted AND the default algorithm set by
+    # SCons is md5, then set the database name to be the special default name
+    #
+    # otherwise, if it defaults to something like 'sha1' or the user explicitly
+    # set 'md5' as the hash format, set the database name to .sconsign_<algorithm>
+    # eg .sconsign_sha1, etc.
+    if hash_format is None and current_hash_algorithm == 'md5':
+        return ".sconsign"
+    else:
+        return ".sconsign_" + current_hash_algorithm
 
 def Get_DataBase(dir):
     global DataBase, DB_Module, DB_Name
+
+    if DB_Name is None:
+        DB_Name = current_sconsign_filename()
+
     top = dir.fs.Top
     if not os.path.isabs(DB_Name) and top.repositories:
         mode = "c"
@@ -103,6 +118,10 @@ normcase = os.path.normcase
 
 def write():
     global sig_files
+
+    if print_time():
+        start_time = time.perf_counter()
+
     for sig_file in sig_files:
         sig_file.write(sync=0)
     for db in DB_sync_list:
@@ -118,6 +137,10 @@ def write():
             pass # Not all dbm modules have close() methods.
         else:
             closemethod()
+
+    if print_time():
+        elapsed = time.perf_counter() - start_time
+        print('Total SConsign sync time: %f seconds' % elapsed)
 
 
 class SConsignEntry:
@@ -146,7 +169,7 @@ class SConsignEntry:
     def __getstate__(self):
         state = getattr(self, '__dict__', {}).copy()
         for obj in type(self).mro():
-            for name in getattr(obj,'__slots__',()):
+            for name in getattr(obj, '__slots__', ()):
                 if hasattr(self, name):
                     state[name] = getattr(self, name)
 
@@ -159,7 +182,7 @@ class SConsignEntry:
 
     def __setstate__(self, state):
         for key, value in state.items():
-            if key not in ('_version_id','__weakref__'):
+            if key not in ('_version_id', '__weakref__'):
                 setattr(self, key, value)
 
 
@@ -225,7 +248,7 @@ class DB(Base):
     determined by the database module.
     """
     def __init__(self, dir):
-        Base.__init__(self)
+        super().__init__()
 
         self.dir = dir
 
@@ -296,7 +319,7 @@ class Dir(Base):
         """
         fp - file pointer to read entries from
         """
-        Base.__init__(self)
+        super().__init__()
 
         if not fp:
             return
@@ -321,7 +344,7 @@ class DirFile(Dir):
         """
 
         self.dir = dir
-        self.sconsign = os.path.join(dir.get_internal_path(), '.sconsign')
+        self.sconsign = os.path.join(dir.get_internal_path(), current_sconsign_filename())
 
         try:
             fp = open(self.sconsign, 'rb')
@@ -329,7 +352,7 @@ class DirFile(Dir):
             fp = None
 
         try:
-            Dir.__init__(self, fp, dir)
+            super().__init__(fp, dir)
         except KeyboardInterrupt:
             raise
         except Exception:

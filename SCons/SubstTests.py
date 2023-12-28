@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,20 +20,19 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import SCons.compat
 
 import os
-import sys
 import unittest
+from functools import partial
 
-from collections import UserDict
 
 import SCons.Errors
 
-from SCons.Subst import *
+from SCons.Subst import (Literal, SUBST_CMD, SUBST_RAW, SUBST_SIG, SpecialAttrWrapper, collections,
+                         escape_list, quote_spaces, scons_subst, scons_subst_list, scons_subst_once,
+                         subst_dict)
 
 class DummyNode:
     """Simple node work-alike."""
@@ -93,6 +93,23 @@ class CmdGen2:
         assert for_signature == self.expect_for_signature, for_signature
         return [ self.mystr, env.Dictionary('BAR') ]
 
+
+def CallableWithDefault(target, source, env, for_signature, other_value="default"):
+    assert str(target) == 't', target
+    assert str(source) == 's', source
+    return "CallableWithDefault: %s"%other_value
+
+PartialCallable = partial(CallableWithDefault, other_value="partial")
+
+def CallableWithNoDefault(target, source, env, for_signature, other_value):
+    assert str(target) == 't', target
+    assert str(source) == 's', source
+    return "CallableWithNoDefault: %s"%other_value
+
+PartialCallableNoDefault = partial(CallableWithNoDefault, other_value="partialNoDefault")
+
+
+
 if os.sep == '/':
     def cvt(str):
         return str
@@ -104,7 +121,7 @@ class SubstTestCase(unittest.TestCase):
     class MyNode(DummyNode):
         """Simple node work-alike with some extra stuff for testing."""
         def __init__(self, name):
-            DummyNode.__init__(self, name)
+            super().__init__(name)
             class Attribute:
                 pass
             self.attribute = Attribute()
@@ -191,6 +208,10 @@ class SubstTestCase(unittest.TestCase):
         'CMDGEN1'   : CmdGen1,
         'CMDGEN2'   : CmdGen2,
 
+        'CallableWithDefault': CallableWithDefault,
+        'PartialCallable' : PartialCallable,
+        'PartialCallableNoDefault' : PartialCallableNoDefault,
+
         'LITERALS'  : [ Literal('foo\nwith\nnewlines'),
                         Literal('bar\nwith\nnewlines') ],
 
@@ -239,6 +260,7 @@ class SubstTestCase(unittest.TestCase):
                   'gvars' : env.Dictionary()}
 
         failed = 0
+        case_count = 0
         while cases:
             input, expect = cases[:2]
             expect = convert(expect)
@@ -251,11 +273,13 @@ class SubstTestCase(unittest.TestCase):
             else:
                 if result != expect:
                     if failed == 0: print()
-                    print("    input %s => \n%s did not match \n%s" % (repr(input), repr(result), repr(expect)))
+                    print("[%4d]    input %s => \n%s did not match \n%s" % (case_count, repr(input), repr(result), repr(expect)))
                     failed = failed + 1
             del cases[:2]
+            case_count += 1
         fmt = "%d %s() cases failed"
         assert failed == 0, fmt % (failed, function.__name__)
+
 
 class scons_subst_TestCase(SubstTestCase):
 
@@ -519,6 +543,35 @@ class scons_subst_TestCase(SubstTestCase):
                              gvars=gvars)
         assert newcom == "test foo bar with spaces.out s t", newcom
 
+    def test_subst_callable_with_default_expansion(self):
+        """Test scons_subst():  expanding a callable with a default value arg"""
+        env = DummyEnv(self.loc)
+        gvars = env.Dictionary()
+        newcom = scons_subst("test $CallableWithDefault $SOURCES $TARGETS", env,
+                             target=self.MyNode('t'), source=self.MyNode('s'),
+                             gvars=gvars)
+        assert newcom == "test CallableWithDefault: default s t", newcom
+
+    def test_subst_partial_callable_with_default_expansion(self):
+        """Test scons_subst():  expanding a functools.partial callable which sets
+           the default value in the callable"""
+        env = DummyEnv(self.loc)
+        gvars = env.Dictionary()
+        newcom = scons_subst("test $PartialCallable $SOURCES $TARGETS", env,
+                             target=self.MyNode('t'), source=self.MyNode('s'),
+                             gvars=gvars)
+        assert newcom == "test CallableWithDefault: partial s t", newcom
+
+    def test_subst_partial_callable_with_no_default_expansion(self):
+        """Test scons_subst():  expanding a functools.partial callable which sets
+           the value for extraneous function argument"""
+        env = DummyEnv(self.loc)
+        gvars = env.Dictionary()
+        newcom = scons_subst("test $PartialCallableNoDefault $SOURCES $TARGETS", env,
+                             target=self.MyNode('t'), source=self.MyNode('s'),
+                             gvars=gvars)
+        assert newcom == "test CallableWithNoDefault: partialNoDefault s t", newcom
+
     def test_subst_attribute_errors(self):
         """Test scons_subst():  handling attribute errors"""
         env = DummyEnv(self.loc)
@@ -544,10 +597,10 @@ class scons_subst_TestCase(SubstTestCase):
             scons_subst('$foo.bar.3.0', env)
         except SCons.Errors.UserError as e:
             expect = [
-                # Python 2.3, 2.4
-                "SyntaxError `invalid syntax (line 1)' trying to evaluate `$foo.bar.3.0'",
-                # Python 2.5
+                # Python 2.5 to 3.9
                 "SyntaxError `invalid syntax (<string>, line 1)' trying to evaluate `$foo.bar.3.0'",
+                # Python 3.10 and later
+                "SyntaxError `invalid syntax. Perhaps you forgot a comma? (<string>, line 1)' trying to evaluate `$foo.bar.3.0'",
             ]
             assert str(e) in expect, e
         else:
@@ -593,7 +646,9 @@ class scons_subst_TestCase(SubstTestCase):
         except SCons.Errors.UserError as e:
             expect = [
                 # Python 3.5 (and 3.x?)
-                "TypeError `func() missing 2 required positional arguments: 'b' and 'c'' trying to evaluate `${func(1)}'"
+                "TypeError `func() missing 2 required positional arguments: 'b' and 'c'' trying to evaluate `${func(1)}'",
+                # Python 3.10
+                "TypeError `scons_subst_TestCase.test_subst_type_errors.<locals>.func() missing 2 required positional arguments: 'b' and 'c'' trying to evaluate `${func(1)}'",
             ]
             assert str(e) in expect, repr(str(e))
         else:
@@ -657,6 +712,14 @@ class CLVar_TestCase(unittest.TestCase):
         assert cmd_list[0][2] == "bar", cmd_list[0][2]
         assert cmd_list[0][3] == "call", cmd_list[0][3]
         assert cmd_list[0][4] == "test", cmd_list[0][4]
+
+
+    def test_subst_overriding_lvars_overrides(self):
+        """Test that optional passed arg overrides overrides gvars, and existing lvars."""
+        env=DummyEnv({'XXX' : 'xxx'})
+        result = scons_subst('$XXX', env, gvars=env.Dictionary(), overrides={'XXX': 'yyz'})
+        assert result == 'yyz', result
+
 
 class scons_subst_list_TestCase(SubstTestCase):
 
@@ -1001,9 +1064,10 @@ class scons_subst_list_TestCase(SubstTestCase):
             scons_subst_list('$foo.bar.3.0', env)
         except SCons.Errors.UserError as e:
             expect = [
-                "SyntaxError `invalid syntax' trying to evaluate `$foo.bar.3.0'",
-                "SyntaxError `invalid syntax (line 1)' trying to evaluate `$foo.bar.3.0'",
+                # Python 2.5 to 3.9
                 "SyntaxError `invalid syntax (<string>, line 1)' trying to evaluate `$foo.bar.3.0'",
+                # Python 3.10 and later
+                "SyntaxError `invalid syntax. Perhaps you forgot a comma? (<string>, line 1)' trying to evaluate `$foo.bar.3.0'",
             ]
             assert str(e) in expect, e
         else:
@@ -1045,6 +1109,13 @@ class scons_subst_list_TestCase(SubstTestCase):
         assert result == [['xxx']], result
         result = scons_subst_list('$XXX', env, gvars={'XXX' : 'yyy'})
         assert result == [['yyy']], result
+
+    def test_subst_list_overriding_lvars_overrides(self):
+        """Test that optional passed arg overrides overrides gvars, and existing lvars."""
+        env = DummyEnv({'XXX':'xxx'})
+        result = scons_subst_list('$XXX', env, gvars=env.Dictionary(), overrides={'XXX': 'yyy'})
+        assert result == [['yyy']], result
+
 
 class scons_subst_once_TestCase(unittest.TestCase):
 

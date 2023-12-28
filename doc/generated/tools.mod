@@ -79,13 +79,14 @@ THIS IS AN AUTOMATICALLY-GENERATED FILE.  DO NOT EDIT.
 <!ENTITY t-mwcc "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>mwcc</literal>">
 <!ENTITY t-mwld "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>mwld</literal>">
 <!ENTITY t-nasm "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>nasm</literal>">
+<!ENTITY t-ninja "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>ninja</literal>">
 <!ENTITY t-packaging "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>packaging</literal>">
-<!ENTITY t-Packaging "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>Packaging</literal>">
 <!ENTITY t-pdf "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>pdf</literal>">
 <!ENTITY t-pdflatex "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>pdflatex</literal>">
 <!ENTITY t-pdftex "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>pdftex</literal>">
 <!ENTITY t-python "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>python</literal>">
 <!ENTITY t-qt "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>qt</literal>">
+<!ENTITY t-qt3 "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>qt3</literal>">
 <!ENTITY t-rmic "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>rmic</literal>">
 <!ENTITY t-rpcgen "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>rpcgen</literal>">
 <!ENTITY t-sgiar "<literal xmlns='http://www.scons.org/dbxsd/v1.0'>sgiar</literal>">
@@ -185,13 +186,14 @@ THIS IS AN AUTOMATICALLY-GENERATED FILE.  DO NOT EDIT.
 <!ENTITY t-link-mwcc "<link linkend='t-mwcc' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>mwcc</literal></link>">
 <!ENTITY t-link-mwld "<link linkend='t-mwld' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>mwld</literal></link>">
 <!ENTITY t-link-nasm "<link linkend='t-nasm' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>nasm</literal></link>">
+<!ENTITY t-link-ninja "<link linkend='t-ninja' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>ninja</literal></link>">
 <!ENTITY t-link-packaging "<link linkend='t-packaging' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>packaging</literal></link>">
-<!ENTITY t-link-Packaging "<link linkend='t-Packaging' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>Packaging</literal></link>">
 <!ENTITY t-link-pdf "<link linkend='t-pdf' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>pdf</literal></link>">
 <!ENTITY t-link-pdflatex "<link linkend='t-pdflatex' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>pdflatex</literal></link>">
 <!ENTITY t-link-pdftex "<link linkend='t-pdftex' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>pdftex</literal></link>">
 <!ENTITY t-link-python "<link linkend='t-python' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>python</literal></link>">
 <!ENTITY t-link-qt "<link linkend='t-qt' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>qt</literal></link>">
+<!ENTITY t-link-qt3 "<link linkend='t-qt3' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>qt3</literal></link>">
 <!ENTITY t-link-rmic "<link linkend='t-rmic' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>rmic</literal></link>">
 <!ENTITY t-link-rpcgen "<link linkend='t-rpcgen' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>rpcgen</literal></link>">
 <!ENTITY t-link-sgiar "<link linkend='t-sgiar' xmlns='http://www.scons.org/dbxsd/v1.0'><literal>sgiar</literal></link>">

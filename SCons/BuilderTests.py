@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,8 +20,6 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import SCons.compat
 
@@ -39,7 +38,6 @@ import sys
 import unittest
 
 import TestCmd
-import TestUnit
 
 import SCons.Action
 import SCons.Builder
@@ -119,10 +117,8 @@ class Environment:
         self.d[item] = var
     def __getitem__(self, item):
         return self.d[item]
-    def __contains__(self, item):
-        return self.d.__contains__(item)
-    def has_key(self, item):
-        return item in self.d
+    def __contains__(self, key):
+        return key in self.d
     def keys(self):
         return list(self.d.keys())
     def get(self, key, value=None):
@@ -208,13 +204,14 @@ class BuilderTestCase(unittest.TestCase):
         x = builder.overrides['OVERRIDE']
         assert x == 'x', x
 
-    def test__nonzero__(self):
-        """Test a builder raising an exception when __nonzero__ is called
-        """
+    def test__bool__(self):
+        """Test a builder raising an exception when __bool__ is called. """
+
+        # basic test: explicitly call it
         builder = SCons.Builder.Builder(action="foo")
         exc_caught = None
         try:
-            builder.__nonzero__()
+            builder.__bool__()
         except SCons.Errors.InternalError:
             exc_caught = 1
         assert exc_caught, "did not catch expected InternalError exception"
@@ -222,12 +219,18 @@ class BuilderTestCase(unittest.TestCase):
         class Node:
              pass
 
+        # the interesting test: checking the attribute this way
+        # should call back to Builder.__bool__ - so we can tell
+        # people not to check that way (for performance).
+        # TODO: workaround #3860: with just a "pass" in the check body,
+        # py3.10a optimizes out the whole thing, so add a "real" stmt
         n = Node()
         n.builder = builder
         exc_caught = None
         try:
             if n.builder:
-                pass
+                #pass
+                _ = True
         except SCons.Errors.InternalError:
             exc_caught = 1
         assert exc_caught, "did not catch expected InternalError exception"
@@ -860,7 +863,7 @@ class BuilderTestCase(unittest.TestCase):
         def func(self):
             pass
 
-        scanner = SCons.Scanner.Base(func, name='fooscan')
+        scanner = SCons.Scanner.ScannerBase(func, name='fooscan')
 
         b1 = SCons.Builder.Builder(action='bld', target_scanner=scanner)
         b2 = SCons.Builder.Builder(action='bld', target_scanner=scanner)
@@ -1617,16 +1620,7 @@ class CompositeBuilderTestCase(unittest.TestCase):
         assert str(err) == expect, err
 
 if __name__ == "__main__":
-    suite = unittest.TestSuite()
-    tclasses = [
-        BuilderTestCase,
-        CompositeBuilderTestCase
-    ]
-    for tclass in tclasses:
-        names = unittest.getTestCaseNames(tclass, 'test_')
-        suite.addTests(list(map(tclass, names)))
-
-    TestUnit.run(suite)
+    unittest.main()
 
 # Local Variables:
 # tab-width:4

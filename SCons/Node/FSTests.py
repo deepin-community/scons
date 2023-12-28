@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,11 +20,8 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import SCons.compat
-
 import os
 import os.path
 import sys
@@ -33,7 +31,6 @@ import shutil
 import stat
 
 from TestCmd import TestCmd, IS_WINDOWS
-import TestUnit
 
 import SCons.Errors
 import SCons.Node.FS
@@ -411,8 +408,8 @@ class VariantDirTestCase(unittest.TestCase):
                            None)
         os.chmod(test.workpath('src/foo'), stat.S_IRUSR | stat.S_IWRITE)
         st = os.stat(test.workpath('build/foo'))
-        assert (stat.S_IMODE(st[stat.ST_MODE]) & stat.S_IWRITE), \
-            stat.S_IMODE(st[stat.ST_MODE])
+        assert (stat.S_IMODE(st.st_mode) & stat.S_IWRITE), \
+            stat.S_IMODE(st.st_mode)
 
         # This used to generate a UserError when we forbid the source
         # directory from being outside the top-level SConstruct dir.
@@ -774,7 +771,7 @@ class FileNodeInfoTestCase(_tempdirTestCase):
 
         mtime = st[stat.ST_MTIME]
         assert ni.timestamp == mtime, (ni.timestamp, mtime)
-        size = st[stat.ST_SIZE]
+        size = st.st_size
         assert ni.size == size, (ni.size, size)
 
         import time
@@ -786,7 +783,7 @@ class FileNodeInfoTestCase(_tempdirTestCase):
 
         mtime = st[stat.ST_MTIME]
         assert ni.timestamp != mtime, (ni.timestamp, mtime)
-        size = st[stat.ST_SIZE]
+        size = st.st_size
         assert ni.size != size, (ni.size, size)
 
 
@@ -1694,7 +1691,6 @@ class FSTestCase(_tempdirTestCase):
             except AttributeError:
                 # could be python 3.7 or newer, make sure splitdrive can do UNC
                 assert ntpath.splitdrive(r'\\split\drive\test')[0] == r'\\split\drive'
-                pass
             path = strip_slash(path)
             return '//' + path[1:]
 
@@ -1826,7 +1822,7 @@ class FSTestCase(_tempdirTestCase):
         test.write(['subdir', 'build'], "subdir/build\n")
 
         subdir = fs.Dir('subdir')
-        fs.chdir(subdir, change_os_dir=1)
+        fs.chdir(subdir, change_os_dir=True)
         self.fs._lookup('#build/file', subdir, SCons.Node.FS.File)
 
     def test_above_root(self):
@@ -2057,6 +2053,65 @@ class DirTestCase(_tempdirTestCase):
         assert f.get_csig() + " f" == files[1], files
         assert g.get_csig() + " g" == files[2], files
         assert s.get_csig() + " sub" == files[3], files
+
+    def test_hash_chunksize(self):
+        """
+        Test verifying that File.get_csig() correctly uses hash_chunksize. This
+        variable is documented as the hash chunksize in kilobytes. This test
+        verifies that if the file size is less than the hash chunksize,
+        get_contents() is called; otherwise, it verifies that get_contents()
+        is not called.
+        """
+        chunksize_bytes = SCons.Node.FS.File.hash_chunksize
+        test = self.test
+
+        test.subdir('chunksize_dir')
+        test.write(['chunksize_dir', 'f1'], 'a' * (chunksize_bytes // 1024 - 1))
+        test.write(['chunksize_dir', 'f2'], 'a' * (chunksize_bytes // 1024))
+        test.write(['chunksize_dir', 'f3'], 'a' * (chunksize_bytes + 1))
+
+        dir = self.fs.Dir('chunksize_dir')
+        f1 = dir.File('f1')
+        f2 = dir.File('f2')
+        f3 = dir.File('f3')
+
+        # Expect f1 and f2 to call get_contents(), while f3 will not because it
+        # should do reads of chunksize kilobytes at a time.
+        expected_get_contents_calls = {f1, f2}
+        self.actual_get_contents_calls = 0
+
+        def get_contents_override(file_object):
+            self.actual_get_contents_calls += 1
+            if file_object in expected_get_contents_calls:
+                return file_object._old_get_contents()
+            else:
+                raise Exception('get_contents was unexpectedly called on node '
+                                '%s' % file_object)
+
+        SCons.Node.FS.File._old_get_contents = SCons.Node.FS.File.get_contents
+        SCons.Node.FS.File.get_contents = get_contents_override.__get__(
+            None, SCons.Node.FS)
+
+        # Call get_csig() to test get_contents() usage. The actual results of
+        # the calls to get_csig() are not relevant for this test. If an
+        # exception is raised, we must first reset the get_contents function
+        # before reraising it or other tests will fail too.
+        exception = None
+        try:
+            f1.get_csig()
+            f2.get_csig()
+            f3.get_csig()
+        except Exception as e:
+            exception = e
+
+        SCons.Node.FS.File.get_contents = SCons.Node.FS.File._old_get_contents
+        delattr(SCons.Node.FS.File, '_old_get_contents')
+
+        if exception:
+            raise exception
+
+        assert self.actual_get_contents_calls == len(expected_get_contents_calls), \
+            self.actual_get_contents_calls
 
     def test_implicit_re_scans(self):
         """Test that adding entries causes a directory to be re-scanned
@@ -2513,7 +2568,7 @@ class FileTestCase(_tempdirTestCase):
 
         class ChangedNode(SCons.Node.FS.File):
             def __init__(self, name, directory=None, fs=None):
-                SCons.Node.FS.File.__init__(self, name, directory, fs)
+                super().__init__(name, directory, fs)
                 self.name = name
                 self.Tag('found_includes', [])
                 self.stored_info = None
@@ -2553,7 +2608,7 @@ class FileTestCase(_tempdirTestCase):
         class ChangedEnvironment(SCons.Environment.Base):
 
             def __init__(self):
-                SCons.Environment.Base.__init__(self)
+                super().__init__()
                 self.decide_source = self._changed_timestamp_then_content
 
         class FakeNodeInfo:
@@ -2630,8 +2685,11 @@ class FileTestCase(_tempdirTestCase):
             print("%15s -> csig:%s" % (i3.name, i3.ninfo.csig))
             print("%15s -> csig:%s" % (i4.name, i4.ninfo.csig))
 
-        self.assertEqual(i2.name, i2.ninfo.csig,
-                         "gamma.h's fake csig should equal gamma.h but equals:%s" % i2.ninfo.csig)
+        self.assertEqual(
+            i2.name,
+            i2.ninfo.csig,
+            "gamma.h's fake csig should equal gamma.h but equals:%s" % i2.ninfo.csig,
+        )
 
 
 class GlobTestCase(_tempdirTestCase):
@@ -3617,7 +3675,8 @@ class CacheDirTestCase(unittest.TestCase):
 
         f9 = fs.File('f9')
         r = f9.get_cachedir_csig()
-        assert r == 'd41d8cd98f00b204e9800998ecf8427e', r
+        exsig = SCons.Util.MD5signature(SCons.Util.NOFILE)
+        assert r == exsig, r
 
 
 class clearTestCase(unittest.TestCase):
@@ -3666,6 +3725,13 @@ class clearTestCase(unittest.TestCase):
         assert not f.exists()
         assert not f.rexists()
         assert str(f) == test.workpath('f'), str(f)
+        # Now verify clear() resets optional File-specific attributes
+        optional_attrs = ['cachedir_csig', 'cachesig', 'contentsig']
+        for attr in optional_attrs:
+            setattr(f, attr, 'xyz')
+        f.clear()
+        for attr in optional_attrs:
+            assert not hasattr(f, attr), attr
 
 
 class disambiguateTestCase(unittest.TestCase):

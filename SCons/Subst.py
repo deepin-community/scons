@@ -1,11 +1,6 @@
-"""SCons.Subst
-
-SCons string substitution.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -26,27 +21,29 @@ SCons string substitution.
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""SCons string substitution."""
 
 import collections
 import re
-from inspect import signature
-import SCons.Errors
+from inspect import signature, Parameter
 
+import SCons.Errors
 from SCons.Util import is_String, is_Sequence
 
 # Indexed by the SUBST_* constants below.
-_strconv = [SCons.Util.to_String_for_subst,
-            SCons.Util.to_String_for_subst,
-            SCons.Util.to_String_for_signature]
-
-
+_strconv = [
+    SCons.Util.to_String_for_subst,
+    SCons.Util.to_String_for_subst,
+    SCons.Util.to_String_for_signature,
+]
 
 AllowableExceptions = (IndexError, NameError)
+
 
 def SetAllowableExceptions(*excepts):
     global AllowableExceptions
     AllowableExceptions = [_f for _f in excepts if _f]
+
 
 def raise_exception(exception, target, s):
     name = exception.__class__.__name__
@@ -55,7 +52,6 @@ def raise_exception(exception, target, s):
         raise SCons.Errors.BuildError(target[0], msg)
     else:
         raise SCons.Errors.UserError(msg)
-
 
 
 class Literal:
@@ -136,7 +132,7 @@ class CmdStringHolder(collections.UserString):
     proper escape sequences inserted.
     """
     def __init__(self, cmd, literal=None):
-        collections.UserString.__init__(self, cmd)
+        super().__init__(cmd)
         self.literal = literal
 
     def is_literal(self):
@@ -221,10 +217,6 @@ class Targets_or_Sources(collections.UserList):
     def __getitem__(self, i):
         nl = self.nl._create_nodelist()
         return nl[i]
-    def __getslice__(self, i, j):
-        nl = self.nl._create_nodelist()
-        i = max(i, 0); j = max(j, 0)
-        return nl[i:j]
     def __str__(self):
         nl = self.nl._create_nodelist()
         return str(nl)
@@ -332,6 +324,8 @@ def subst_dict(target, source):
     return dict
 
 
+_callable_args_set = {'target', 'source', 'env', 'for_signature'}
+
 class StringSubber:
     """A class to construct the results of a scons_subst() call.
 
@@ -339,6 +333,8 @@ class StringSubber:
     source with two methods (substitute() and expand()) that handle
     the expansion.
     """
+
+
     def __init__(self, env, mode, conv, gvars):
         self.env = env
         self.mode = mode
@@ -420,15 +416,19 @@ class StringSubber:
                 return conv(substitute(l, lvars))
             return list(map(func, s))
         elif callable(s):
+
             # SCons has the unusual Null class where any __getattr__ call returns it's self, 
             # which does not work the signature module, and the Null class returns an empty
             # string if called on, so we make an exception in this condition for Null class
-            if (isinstance(s, SCons.Util.Null) or
-                set(signature(s).parameters.keys()) == set(['target', 'source', 'env', 'for_signature'])):
+            # Also allow callables where the only non default valued args match the expected defaults
+            # this should also allow functools.partial's to work.
+            if isinstance(s, SCons.Util.Null) or {k for k, v in signature(s).parameters.items() if
+                                                  k in _callable_args_set or v.default == Parameter.empty} == _callable_args_set:
+
                 s = s(target=lvars['TARGETS'],
                      source=lvars['SOURCES'],
                      env=self.env,
-                     for_signature=(self.mode != SUBST_CMD))
+                     for_signature=(self.mode == SUBST_SIG))
             else:
                 # This probably indicates that it's a callable
                 # object that doesn't match our calling arguments
@@ -490,7 +490,7 @@ class ListSubber(collections.UserList):
     internally.
     """
     def __init__(self, env, mode, conv, gvars):
-        collections.UserList.__init__(self, [])
+        super().__init__([])
         self.env = env
         self.mode = mode
         self.conv = conv
@@ -597,8 +597,11 @@ class ListSubber(collections.UserList):
             # SCons has the unusual Null class where any __getattr__ call returns it's self, 
             # which does not work the signature module, and the Null class returns an empty
             # string if called on, so we make an exception in this condition for Null class
-            if (isinstance(s, SCons.Util.Null) or
-                set(signature(s).parameters.keys()) == set(['target', 'source', 'env', 'for_signature'])):
+            # Also allow callables where the only non default valued args match the expected defaults
+            # this should also allow functools.partial's to work.
+            if isinstance(s, SCons.Util.Null) or {k for k, v in signature(s).parameters.items() if
+                                                  k in _callable_args_set or v.default == Parameter.empty} == _callable_args_set:
+
                 s = s(target=lvars['TARGETS'],
                      source=lvars['SOURCES'],
                      env=self.env,
@@ -801,7 +804,8 @@ _separate_args = re.compile(r'(%s|\s+|[^\s$]+|\$)' % _dollar_exps_str)
 # space characters in the string result from the scons_subst() function.
 _space_sep = re.compile(r'[\t ]+(?![^{]*})')
 
-def scons_subst(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={}, lvars={}, conv=None):
+
+def scons_subst(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={}, lvars={}, conv=None, overrides=False):
     """Expand a string or list containing construction variable
     substitutions.
 
@@ -830,6 +834,10 @@ def scons_subst(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={
         if d:
             lvars = lvars.copy()
             lvars.update(d)
+
+    # Allow last ditch chance to override lvars
+    if overrides:
+        lvars.update(overrides)
 
     # We're (most likely) going to eval() things.  If Python doesn't
     # find a __builtins__ value in the global dictionary used for eval(),
@@ -879,7 +887,7 @@ def scons_subst(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={
 
     return result
 
-def scons_subst_list(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={}, lvars={}, conv=None):
+def scons_subst_list(strSubst, env, mode=SUBST_RAW, target=None, source=None, gvars={}, lvars={}, conv=None,overrides=False):
     """Substitute construction variables in a string (or list or other
     object) and separate the arguments into a command list.
 
@@ -904,6 +912,10 @@ def scons_subst_list(strSubst, env, mode=SUBST_RAW, target=None, source=None, gv
         if d:
             lvars = lvars.copy()
             lvars.update(d)
+
+    # Allow caller to specify last ditch override of lvars
+    if overrides:
+        lvars.update(overrides)
 
     # We're (most likely) going to eval() things.  If Python doesn't
     # find a __builtins__ value in the global dictionary used for eval(),

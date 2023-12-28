@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,23 +20,68 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import SCons.compat
-
+import functools
 import io
 import os
 import sys
 import unittest
-from collections import UserDict, UserList, UserString
+import unittest.mock
+import hashlib
+import warnings
+from collections import UserDict, UserList, UserString, namedtuple
 
 import TestCmd
 
 import SCons.Errors
+import SCons.compat
+from SCons.Util import (
+    ALLOWED_HASH_FORMATS,
+    AddPathIfNotExists,
+    AppendPath,
+    CLVar,
+    LogicalLines,
+    NodeList,
+    PrependPath,
+    Proxy,
+    Selector,
+    WhereIs,
+    adjustixes,
+    containsAll,
+    containsAny,
+    containsOnly,
+    dictify,
+    display,
+    flatten,
+    get_env_bool,
+    get_environment_var,
+    get_native_path,
+    get_os_env_bool,
+    hash_collect,
+    hash_signature,
+    is_Dict,
+    is_List,
+    is_String,
+    is_Tuple,
+    print_tree,
+    render_tree,
+    set_hash_format,
+    silent_intern,
+    splitext,
+    to_String,
+    to_bytes,
+    to_str,
+)
+from SCons.Util.hashes import (
+    _attempt_init_of_python_3_9_hash_object,
+    _attempt_get_hash_function,
+    _get_hash_object,
+    _set_allowed_viable_default_hashes,
+)
 
-from SCons.Util import *
+# These Util classes have no unit tests. Some don't make sense to test?
+# DisplayEngine, Delegate, MethodWrapper, UniqueList, Unbuffered, Null, NullSeq
+
 
 class OutBuffer:
     def __init__(self):
@@ -48,13 +94,13 @@ class OutBuffer:
 class dictifyTestCase(unittest.TestCase):
     def test_dictify(self):
         """Test the dictify() function"""
-        r = SCons.Util.dictify(['a', 'b', 'c'], [1, 2, 3])
+        r = dictify(['a', 'b', 'c'], [1, 2, 3])
         assert r == {'a': 1, 'b': 2, 'c': 3}, r
 
         r = {}
-        SCons.Util.dictify(['a'], [1], r)
-        SCons.Util.dictify(['b'], [2], r)
-        SCons.Util.dictify(['c'], [3], r)
+        dictify(['a'], [1], r)
+        dictify(['b'], [2], r)
+        dictify(['c'], [3], r)
         assert r == {'a': 1, 'b': 2, 'c': 3}, r
 
 
@@ -195,11 +241,7 @@ class UtilTestCase(unittest.TestCase):
         try:
             node, expect, withtags = self.tree_case_1()
 
-            if sys.version_info.major < 3:
-                IOStream = io.BytesIO
-            else:
-                IOStream = io.StringIO
-
+            IOStream = io.StringIO
             sys.stdout = IOStream()
             print_tree(node, get_children)
             actual = sys.stdout.getvalue()
@@ -251,11 +293,6 @@ class UtilTestCase(unittest.TestCase):
     def test_is_Dict(self):
         assert is_Dict({})
         assert is_Dict(UserDict())
-
-        # os.environ is not a dictionary in python 3
-        if sys.version_info < (3, 0):
-            assert is_Dict(os.environ)
-
         try:
             class mydict(dict):
                 pass
@@ -499,10 +536,16 @@ class UtilTestCase(unittest.TestCase):
         # have to include the pathsep here so that the test will work on UNIX too.
         p1 = PrependPath(p1, r'C:\dir\num\two', sep=';')
         p1 = PrependPath(p1, r'C:\dir\num\three', sep=';')
+        assert p1 == r'C:\dir\num\three;C:\dir\num\two;C:\dir\num\one', p1
+
         p2 = PrependPath(p2, r'C:\mydir\num\three', sep=';')
         p2 = PrependPath(p2, r'C:\mydir\num\one', sep=';')
-        assert (p1 == r'C:\dir\num\three;C:\dir\num\two;C:\dir\num\one')
-        assert (p2 == r'C:\mydir\num\one;C:\mydir\num\three;C:\mydir\num\two')
+        assert p2 == r'C:\mydir\num\one;C:\mydir\num\three;C:\mydir\num\two', p2
+
+        # check (only) first one is kept if there are dupes in new
+        p3 = r'C:\dir\num\one'
+        p3 = PrependPath(p3, r'C:\dir\num\two;C:\dir\num\three;C:\dir\num\two', sep=';')
+        assert p3 == r'C:\dir\num\two;C:\dir\num\three;C:\dir\num\one', p3
 
     def test_AppendPath(self):
         """Test appending to a path."""
@@ -511,10 +554,16 @@ class UtilTestCase(unittest.TestCase):
         # have to include the pathsep here so that the test will work on UNIX too.
         p1 = AppendPath(p1, r'C:\dir\num\two', sep=';')
         p1 = AppendPath(p1, r'C:\dir\num\three', sep=';')
+        assert p1 == r'C:\dir\num\one;C:\dir\num\two;C:\dir\num\three', p1
+
         p2 = AppendPath(p2, r'C:\mydir\num\three', sep=';')
         p2 = AppendPath(p2, r'C:\mydir\num\one', sep=';')
-        assert (p1 == r'C:\dir\num\one;C:\dir\num\two;C:\dir\num\three')
-        assert (p2 == r'C:\mydir\num\two;C:\mydir\num\three;C:\mydir\num\one')
+        assert p2 == r'C:\mydir\num\two;C:\mydir\num\three;C:\mydir\num\one', p2
+
+        # check (only) last one is kept if there are dupes in new
+        p3 = r'C:\dir\num\one'
+        p3 = AppendPath(p3, r'C:\dir\num\two;C:\dir\num\three;C:\dir\num\two', sep=';')
+        assert p3 == r'C:\dir\num\one;C:\dir\num\three;C:\dir\num\two', p3
 
     def test_PrependPathPreserveOld(self):
         """Test prepending to a path while preserving old paths"""
@@ -522,7 +571,7 @@ class UtilTestCase(unittest.TestCase):
         # have to include the pathsep here so that the test will work on UNIX too.
         p1 = PrependPath(p1, r'C:\dir\num\two', sep=';', delete_existing=0)
         p1 = PrependPath(p1, r'C:\dir\num\three', sep=';')
-        assert (p1 == r'C:\dir\num\three;C:\dir\num\one;C:\dir\num\two')
+        assert p1 == r'C:\dir\num\three;C:\dir\num\one;C:\dir\num\two', p1
 
     def test_AppendPathPreserveOld(self):
         """Test appending to a path while preserving old paths"""
@@ -530,7 +579,7 @@ class UtilTestCase(unittest.TestCase):
         # have to include the pathsep here so that the test will work on UNIX too.
         p1 = AppendPath(p1, r'C:\dir\num\one', sep=';', delete_existing=0)
         p1 = AppendPath(p1, r'C:\dir\num\three', sep=';')
-        assert (p1 == r'C:\dir\num\one;C:\dir\num\two;C:\dir\num\three')
+        assert p1 == r'C:\dir\num\one;C:\dir\num\two;C:\dir\num\three', p1
 
     def test_addPathIfNotExists(self):
         """Test the AddPathIfNotExists() function"""
@@ -558,101 +607,126 @@ class UtilTestCase(unittest.TestCase):
 
     def test_CLVar(self):
         """Test the command-line construction variable class"""
-        f = SCons.Util.CLVar('a b')
 
-        r = f + 'c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        # the default value should be an empty list
+        d = CLVar()
+        assert isinstance(d, CLVar), type(d)
+        assert d.data == [], d.data
+        assert str(d) == '', str(d)
 
-        r = f + ' c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        # input to CLVar is a string - should be split
+        f = CLVar('aa bb')
 
-        r = f + ['c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c d'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + 'cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', ' c d'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + ' cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + ['c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + ['cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', ' c', 'd'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + [' cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', ' cc dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
 
-        f = SCons.Util.CLVar(['a b'])
+        r = f + ['cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + 'c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + [' cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', ' cc', 'dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
 
-        r = f + ' c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        # input to CLVar is a list of one string, should not be split
+        f = CLVar(['aa bb'])
 
-        r = f + ['c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', 'c d'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + 'cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', ' c d'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + ' cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + ['c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + ['cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', 'cc dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a b', ' c', 'd'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + [' cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', ' cc dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
 
-        f = SCons.Util.CLVar(['a', 'b'])
+        r = f + ['cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + 'c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + [' cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa bb', ' cc', 'dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
 
-        r = f + ' c d'
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        # input to CLVar is a list of strings
+        f = CLVar(['aa', 'bb'])
 
-        r = f + ['c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c d'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + 'cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c d']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', ' c d'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + ' cc dd'
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + ['c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', 'c', 'd'], r.data
-        assert str(r) == 'a b c d', str(r)
+        r = f + ['cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
 
-        r = f + [' c', 'd']
-        assert isinstance(r, SCons.Util.CLVar), type(r)
-        assert r.data == ['a', 'b', ' c', 'd'], r.data
-        assert str(r) == 'a b  c d', str(r)
+        r = f + [' cc dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', ' cc dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
+
+        r = f + ['cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', 'cc', 'dd'], r.data
+        assert str(r) == 'aa bb cc dd', str(r)
+
+        r = f + [' cc', 'dd']
+        assert isinstance(r, CLVar), type(r)
+        assert r.data == ['aa', 'bb', ' cc', 'dd'], r.data
+        assert str(r) == 'aa bb  cc dd', str(r)
+
+        # make sure inplace adding a string works as well (issue 2399)
+        # UserList would convert the string to a list of chars
+        f = CLVar(['aa', 'bb'])
+        f += 'cc dd'
+        assert isinstance(f, CLVar), type(f)
+        assert f.data == ['aa', 'bb', 'cc', 'dd'], f.data
+        assert str(f) == 'aa bb cc dd', str(f)
+
+        f = CLVar(['aa', 'bb'])
+        f += ' cc dd'
+        assert isinstance(f, CLVar), type(f)
+        assert f.data == ['aa', 'bb', 'cc', 'dd'], f.data
+        assert str(f) == 'aa bb cc dd', str(f)
+
 
     def test_Selector(self):
         """Test the Selector class"""
@@ -723,6 +797,11 @@ class UtilTestCase(unittest.TestCase):
         r = adjustixes('dir/file', 'pre-', '-suf')
         assert r == os.path.join('dir', 'pre-file-suf'), r
 
+        # Verify that the odd case when library name is specified as 'lib'
+        # doesn't yield lib.so, but yields the expected liblib.so
+        r = adjustixes('PREFIX', 'PREFIX', 'SUFFIX')
+        assert r == 'PREFIXPREFIXSUFFIX', "Failed handling when filename = PREFIX [r='%s']" % r
+
     def test_containsAny(self):
         """Test the containsAny() function"""
         assert containsAny('*.py', '*?[]')
@@ -766,24 +845,200 @@ bling
         assert id(s1) == id(s4)
 
 
-class MD5TestCase(unittest.TestCase):
+class HashTestCase(unittest.TestCase):
 
     def test_collect(self):
         """Test collecting a list of signatures into a new signature value
         """
-        s = list(map(MD5signature, ('111', '222', '333')))
+        for algorithm, expected in {
+            'md5': ('698d51a19d8a121ce581499d7b701668',
+                    '8980c988edc2c78cc43ccb718c06efd5',
+                    '53fd88c84ff8a285eb6e0a687e55b8c7'),
+            'sha1': ('6216f8a75fd5bb3d5f22b6f9958cdede3fc086c2',
+                     '42eda1b5dcb3586bccfb1c69f22f923145271d97',
+                     '2eb2f7be4e883ebe52034281d818c91e1cf16256'),
+            'sha256': ('f6e0a1e2ac41945a9aa7ff8a8aaa0cebc12a3bcc981a929ad5cf810a090e11ae',
+                       '25235f0fcab8767b7b5ac6568786fbc4f7d5d83468f0626bf07c3dbeed391a7a',
+                       'f8d3d0729bf2427e2e81007588356332e7e8c4133fae4bceb173b93f33411d17'),
+        }.items():
+            # if the current platform does not support the algorithm we're looking at,
+            # skip the test steps for that algorithm, but display a warning to the user
+            if algorithm not in ALLOWED_HASH_FORMATS:
+                warnings.warn("Missing hash algorithm {} on this platform, cannot test with it".format(algorithm), ResourceWarning)
+            else:
+                hs = functools.partial(hash_signature, hash_format=algorithm)
+                s = list(map(hs, ('111', '222', '333')))
 
-        assert '698d51a19d8a121ce581499d7b701668' == MD5collect(s[0:1])
-        assert '8980c988edc2c78cc43ccb718c06efd5' == MD5collect(s[0:2])
-        assert '53fd88c84ff8a285eb6e0a687e55b8c7' == MD5collect(s)
+                assert expected[0] == hash_collect(s[0:1], hash_format=algorithm)
+                assert expected[1] == hash_collect(s[0:2], hash_format=algorithm)
+                assert expected[2] == hash_collect(s, hash_format=algorithm)
 
     def test_MD5signature(self):
         """Test generating a signature"""
-        s = MD5signature('111')
-        assert '698d51a19d8a121ce581499d7b701668' == s, s
+        for algorithm, expected in {
+            'md5': ('698d51a19d8a121ce581499d7b701668',
+                    'bcbe3365e6ac95ea2c0343a2395834dd'),
+            'sha1': ('6216f8a75fd5bb3d5f22b6f9958cdede3fc086c2',
+                     '1c6637a8f2e1f75e06ff9984894d6bd16a3a36a9'),
+            'sha256': ('f6e0a1e2ac41945a9aa7ff8a8aaa0cebc12a3bcc981a929ad5cf810a090e11ae',
+                       '9b871512327c09ce91dd649b3f96a63b7408ef267c8cc5710114e629730cb61f'),
+        }.items():
+            # if the current platform does not support the algorithm we're looking at,
+            # skip the test steps for that algorithm, but display a warning to the user
+            if algorithm not in ALLOWED_HASH_FORMATS:
+                warnings.warn("Missing hash algorithm {} on this platform, cannot test with it".format(algorithm), ResourceWarning)
+            else:
+                s = hash_signature('111', hash_format=algorithm)
+                assert expected[0] == s, s
 
-        s = MD5signature('222')
-        assert 'bcbe3365e6ac95ea2c0343a2395834dd' == s, s
+                s = hash_signature('222', hash_format=algorithm)
+                assert expected[1] == s, s
+
+# this uses mocking out, which is platform specific, however, the FIPS
+# behavior this is testing is also platform-specific, and only would be
+# visible in hosts running Linux with the fips_mode kernel flag along
+# with using OpenSSL.
+
+class FIPSHashTestCase(unittest.TestCase):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        ###############################
+        # algorithm mocks, can check if we called with usedforsecurity=False for python >= 3.9
+        self.fake_md5=lambda usedforsecurity=True: (usedforsecurity, 'md5')
+        self.fake_sha1=lambda usedforsecurity=True: (usedforsecurity, 'sha1')
+        self.fake_sha256=lambda usedforsecurity=True: (usedforsecurity, 'sha256')
+        ###############################
+
+        ###############################
+        # hashlib mocks
+        md5Available = unittest.mock.Mock(md5=self.fake_md5)
+        del md5Available.sha1
+        del md5Available.sha256
+        self.md5Available=md5Available
+
+        md5Default = unittest.mock.Mock(md5=self.fake_md5, sha1=self.fake_sha1)
+        del md5Default.sha256
+        self.md5Default=md5Default
+
+        sha1Default = unittest.mock.Mock(sha1=self.fake_sha1, sha256=self.fake_sha256)
+        del sha1Default.md5
+        self.sha1Default=sha1Default
+
+        sha256Default = unittest.mock.Mock(sha256=self.fake_sha256, **{'md5.side_effect': ValueError, 'sha1.side_effect': ValueError})
+        self.sha256Default=sha256Default
+
+        all_throw = unittest.mock.Mock(**{'md5.side_effect': ValueError, 'sha1.side_effect': ValueError, 'sha256.side_effect': ValueError})
+        self.all_throw=all_throw
+        
+        no_algorithms = unittest.mock.Mock()
+        del no_algorithms.md5
+        del no_algorithms.sha1
+        del no_algorithms.sha256
+        del no_algorithms.nonexist
+        self.no_algorithms=no_algorithms
+        
+        unsupported_algorithm = unittest.mock.Mock(unsupported=self.fake_sha256)
+        del unsupported_algorithm.md5
+        del unsupported_algorithm.sha1
+        del unsupported_algorithm.sha256
+        del unsupported_algorithm.unsupported
+        self.unsupported_algorithm=unsupported_algorithm
+        ###############################
+
+        ###############################
+        # system version mocks
+        VersionInfo = namedtuple('VersionInfo', 'major minor micro releaselevel serial')
+        v3_8 = VersionInfo(3, 8, 199, 'super-beta', 1337)
+        v3_9 = VersionInfo(3, 9, 0, 'alpha', 0)
+        v4_8 = VersionInfo(4, 8, 0, 'final', 0)
+
+        self.sys_v3_8 = unittest.mock.Mock(version_info=v3_8)
+        self.sys_v3_9 = unittest.mock.Mock(version_info=v3_9)
+        self.sys_v4_8 = unittest.mock.Mock(version_info=v4_8)
+        ###############################
+
+    def test_basic_failover_bad_hashlib_hash_init(self):
+        """Tests that if the hashing function is entirely missing from hashlib (hashlib returns None),
+        the hash init function returns None"""
+        assert _attempt_init_of_python_3_9_hash_object(None) is None
+
+    def test_basic_failover_bad_hashlib_hash_get(self):
+        """Tests that if the hashing function is entirely missing from hashlib (hashlib returns None),
+        the hash get function returns None"""
+        assert _attempt_get_hash_function("nonexist", self.no_algorithms) is None
+
+    def test_usedforsecurity_flag_behavior(self):
+        """Test usedforsecurity flag -> should be set to 'True' on older versions of python, and 'False' on Python >= 3.9"""
+        for version, expected in {
+            self.sys_v3_8: (True, 'md5'),
+            self.sys_v3_9: (False, 'md5'),
+            self.sys_v4_8: (False, 'md5'),
+        }.items():
+            assert _attempt_init_of_python_3_9_hash_object(self.fake_md5, version) == expected
+    
+    def test_automatic_default_to_md5(self):
+        """Test automatic default to md5 even if sha1 available"""
+        for version, expected in {
+            self.sys_v3_8: (True, 'md5'),
+            self.sys_v3_9: (False, 'md5'),
+            self.sys_v4_8: (False, 'md5'),
+        }.items():
+            _set_allowed_viable_default_hashes(self.md5Default, version)
+            set_hash_format(None, self.md5Default, version)
+            assert _get_hash_object(None, self.md5Default, version) == expected
+
+    def test_automatic_default_to_sha256(self):
+        """Test automatic default to sha256 if other algorithms available but throw"""
+        for version, expected in {
+            self.sys_v3_8: (True, 'sha256'),
+            self.sys_v3_9: (False, 'sha256'),
+            self.sys_v4_8: (False, 'sha256'),
+        }.items():
+            _set_allowed_viable_default_hashes(self.sha256Default, version)
+            set_hash_format(None, self.sha256Default, version)
+            assert _get_hash_object(None, self.sha256Default, version) == expected
+
+    def test_automatic_default_to_sha1(self):
+        """Test automatic default to sha1 if md5 is missing from hashlib entirely"""
+        for version, expected in {
+            self.sys_v3_8: (True, 'sha1'),
+            self.sys_v3_9: (False, 'sha1'),
+            self.sys_v4_8: (False, 'sha1'),
+        }.items():
+            _set_allowed_viable_default_hashes(self.sha1Default, version)
+            set_hash_format(None, self.sha1Default, version)
+            assert _get_hash_object(None, self.sha1Default, version) == expected
+    
+    def test_no_available_algorithms(self):
+        """expect exceptions on no available algorithms or when all algorithms throw"""
+        self.assertRaises(SCons.Errors.SConsEnvironmentError, _set_allowed_viable_default_hashes, self.no_algorithms)
+        self.assertRaises(SCons.Errors.SConsEnvironmentError, _set_allowed_viable_default_hashes, self.all_throw)
+        self.assertRaises(SCons.Errors.SConsEnvironmentError, _set_allowed_viable_default_hashes, self.unsupported_algorithm)
+
+    def test_bad_algorithm_set_attempt(self):
+        """expect exceptions on user setting an unsupported algorithm selections, either by host or by SCons"""
+
+        # nonexistant hash algorithm, not supported by SCons
+        _set_allowed_viable_default_hashes(self.md5Available)
+        self.assertRaises(SCons.Errors.UserError, set_hash_format, 'blah blah blah', hashlib_used=self.no_algorithms)
+        
+        # md5 is default-allowed, but in this case throws when we attempt to use it
+        _set_allowed_viable_default_hashes(self.md5Available)
+        self.assertRaises(SCons.Errors.UserError, set_hash_format, 'md5', hashlib_used=self.all_throw)
+
+        # user attempts to use an algorithm that isn't supported by their current system but is supported by SCons
+        _set_allowed_viable_default_hashes(self.sha1Default)
+        self.assertRaises(SCons.Errors.UserError, set_hash_format, 'md5', hashlib_used=self.all_throw)
+        
+        # user attempts to use an algorithm that is supported by their current system but isn't supported by SCons
+        _set_allowed_viable_default_hashes(self.sha1Default)
+        self.assertRaises(SCons.Errors.UserError, set_hash_format, 'unsupported', hashlib_used=self.unsupported_algorithm)
+
+    def tearDown(self):
+        """Return SCons back to the normal global state for the hashing functions."""
+        _set_allowed_viable_default_hashes(hashlib, sys)
+        set_hash_format(None)
 
 
 class NodeListTestCase(unittest.TestCase):

@@ -2,7 +2,9 @@
 #
 # SCons - a Software Constructor
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -23,7 +25,10 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+"""Utility script to dump information from SCons signature database."""
+
 import getopt
+import importlib
 import os
 import sys
 from dbm import whichdb
@@ -47,13 +52,18 @@ def my_whichdb(filename):
 
 
 def my_import(mname):
+    """Import database module.
+
+    This was used if the module was *not* SCons.dblite, to allow
+    for programmatic importing.  It is no longer used, in favor of
+    importlib.import_module, and will be removed eventually.
+    """
     import imp
 
     if '.' in mname:
         i = mname.rfind('.')
         parent = my_import(mname[:i])
-        fp, pathname, description = imp.find_module(mname[i+1:],
-                                                    parent.__path__)
+        fp, pathname, description = imp.find_module(mname[i+1:], parent.__path__)
     else:
         fp, pathname, description = imp.find_module(mname)
     return imp.load_module(mname, fp, pathname, description)
@@ -94,11 +104,6 @@ def default_mapper(entry, name):
         val = eval("entry." + name)
     except AttributeError:
         val = None
-    if sys.version_info.major >= 3 and isinstance(val, bytes):
-        # This is a dirty hack for py 2/3 compatibility. csig is a bytes object
-        # in Python3 while Python2 bytes are str. Hence, we decode the csig to a
-        # Python3 string
-        val = val.decode()
     return str(val)
 
 
@@ -323,8 +328,8 @@ class Do_SConsignDB:
             sys.stderr.write("sconsign: ignoring invalid `%s' file `%s': %s\n"
                              % (self.dbm_name, fname, e))
             exc_type, _, _ = sys.exc_info()
-            if exc_type.__name__ == "ValueError" and sys.version_info < (3,0,0):
-                sys.stderr.write("Python 2 only supports pickle protocols 0-2.\n")
+            if exc_type.__name__ == "ValueError":
+                sys.stderr.write("unrecognized pickle protocol.\n")
             return
 
         if Print_Directories:
@@ -372,36 +377,50 @@ def Do_SConsignDir(name):
 
 ##############################################################################
 def main():
-    global  Do_Call
+    global Do_Call
     global nodeinfo_string
     global args
     global Verbose
     global Readable
 
     helpstr = """\
-    Usage: sconsign [OPTIONS] [FILE ...]
-    Options:
-      -a, --act, --action         Print build action information.
-      -c, --csig                  Print content signature information.
-      -d DIR, --dir=DIR           Print only info about DIR.
-      -e ENTRY, --entry=ENTRY     Print only info about ENTRY.
-      -f FORMAT, --format=FORMAT  FILE is in the specified FORMAT.
-      -h, --help                  Print this message and exit.
-      -i, --implicit              Print implicit dependency information.
-      -r, --readable              Print timestamps in human-readable form.
-      --raw                       Print raw Python object representations.
-      -s, --size                  Print file sizes.
-      -t, --timestamp             Print timestamp information.
-      -v, --verbose               Verbose, describe each field.
-    """
+Usage: sconsign [OPTIONS] [FILE ...]
+
+Options:
+  -a, --act, --action         Print build action information.
+  -c, --csig                  Print content signature information.
+  -d DIR, --dir=DIR           Print only info about DIR.
+  -e ENTRY, --entry=ENTRY     Print only info about ENTRY.
+  -f FORMAT, --format=FORMAT  FILE is in the specified FORMAT.
+  -h, --help                  Print this message and exit.
+  -i, --implicit              Print implicit dependency information.
+  -r, --readable              Print timestamps in human-readable form.
+  --raw                       Print raw Python object representations.
+  -s, --size                  Print file sizes.
+  -t, --timestamp             Print timestamp information.
+  -v, --verbose               Verbose, describe each field.
+"""
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "acd:e:f:hirstv",
-                                   ['act', 'action',
-                                    'csig', 'dir=', 'entry=',
-                                    'format=', 'help', 'implicit',
-                                    'raw', 'readable',
-                                    'size', 'timestamp', 'verbose'])
+        opts, args = getopt.getopt(
+            sys.argv[1:],
+            'acd:e:f:hirstv',
+            [
+                'act',
+                'action',
+                'csig',
+                'dir=',
+                'entry=',
+                'format=',
+                'help',
+                'implicit',
+                'raw',
+                'readable',
+                'size',
+                'timestamp',
+                'verbose',
+            ],
+        )
     except getopt.GetoptError as err:
         sys.stderr.write(str(err) + '\n')
         print(helpstr)
@@ -424,7 +443,7 @@ def main():
             if dbm_name:
                 try:
                     if dbm_name != "SCons.dblite":
-                        dbm = my_import(dbm_name)
+                        dbm = importlib.import_module(dbm_name)
                     else:
                         import SCons.dblite
 
@@ -432,7 +451,7 @@ def main():
                         # Ensure that we don't ignore corrupt DB files,
                         # this was handled by calling my_import('SCons.dblite')
                         # again in earlier versions...
-                        SCons.dblite.ignore_corrupt_dbfiles = 0
+                        SCons.dblite.IGNORE_CORRUPT_DBFILES = False
                 except ImportError:
                     sys.stderr.write("sconsign: illegal file format `%s'\n" % a)
                     print(helpstr)
@@ -467,7 +486,7 @@ def main():
             if dbm_name:
                 Map_Module = {'SCons.dblite': 'dblite'}
                 if dbm_name != "SCons.dblite":
-                    dbm = my_import(dbm_name)
+                    dbm = importlib.import_module(dbm_name)
                 else:
                     import SCons.dblite
 
@@ -475,7 +494,7 @@ def main():
                     # Ensure that we don't ignore corrupt DB files,
                     # this was handled by calling my_import('SCons.dblite')
                     # again in earlier versions...
-                    SCons.dblite.ignore_corrupt_dbfiles = 0
+                    SCons.dblite.IGNORE_CORRUPT_DBFILES = False
                 Do_SConsignDB(Map_Module.get(dbm_name, dbm_name), dbm)(a)
             else:
                 Do_SConsignDir(a)

@@ -1,20 +1,6 @@
-"""SCons.Script
-
-This file implements the main() function used by the scons script.
-
-Architecturally, this *is* the scons script, and will likely only be
-called from the external "scons" wrapper.  Consequently, anything here
-should not be, or be considered, part of the build engine.  If it's
-something that we expect other software to want to use, it should go in
-some other module.  If it's specific to the "scons" script invocation,
-it goes here.
-"""
-
-unsupported_python_version = (3, 4, 0)
-deprecated_python_version = (3, 4, 0)
-
-
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -35,8 +21,19 @@ deprecated_python_version = (3, 4, 0)
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""The main() function used by the scons script.
 
+Architecturally, this *is* the scons script, and will likely only be
+called from the external "scons" wrapper.  Consequently, anything here
+should not be, or be considered, part of the build engine.  If it's
+something that we expect other software to want to use, it should go in
+some other module.  If it's specific to the "scons" script invocation,
+it goes here.
+"""
+
+# these define the range of versions SCons supports
+minimum_python_version = (3, 6, 0)
+deprecated_python_version = (3, 6, 0)
 
 import SCons.compat
 
@@ -47,15 +44,15 @@ import re
 import sys
 import time
 import traceback
-import sysconfig
 import platform
+import threading
 
 import SCons.CacheDir
 import SCons.Debug
 import SCons.Defaults
 import SCons.Environment
 import SCons.Errors
-import SCons.Job
+import SCons.Taskmaster.Job
 import SCons.Node
 import SCons.Node.FS
 import SCons.Platform
@@ -67,31 +64,22 @@ import SCons.Util
 import SCons.Warnings
 import SCons.Script.Interactive
 
+from SCons import __version__ as SConsVersion
+
 # Global variables
 first_command_start = None
 last_command_end = None
-print_objects = 0
-print_memoizer = 0
-print_stacktrace = 0
-print_time = 0
-print_action_timestamps = 0
+print_objects = False
+print_memoizer = False
+print_stacktrace = False
+print_time = False
+print_action_timestamps = False
 sconscript_time = 0
 cumulative_command_time = 0
 exit_status = 0   # final exit status, assume success by default
 this_build_status = 0   # "exit status" of an individual build
 num_jobs = None
 delayed_warnings = []
-
-
-def fetch_win32_parallel_msg():
-    # A subsidiary function that exists solely to isolate this import
-    # so we don't have to pull it in on all platforms, and so that an
-    # in-line "import" statement in the _main() function below doesn't
-    # cause warnings about local names shadowing use of the 'SCons'
-    # global in nest scopes and UnboundLocalErrors and the like in some
-    # versions (2.1) of Python.
-    import SCons.Platform.win32
-    return SCons.Platform.win32.parallel_msg
 
 
 def revert_io():
@@ -186,7 +174,9 @@ class BuildTask(SCons.Taskmaster.OutOfDateTask):
         display('scons: ' + message)
 
     def prepare(self):
-        self.progress(self.targets[0])
+        if not isinstance(self.progress, SCons.Util.Null):
+            for target in self.targets:
+                self.progress(target)
         return SCons.Taskmaster.OutOfDateTask.prepare(self)
 
     def needs_execute(self):
@@ -208,11 +198,20 @@ class BuildTask(SCons.Taskmaster.OutOfDateTask):
             global last_command_end
             finish_time = time.time()
             last_command_end = finish_time
-            cumulative_command_time = cumulative_command_time+finish_time-start_time
+            cumulative_command_time += finish_time - start_time
             if print_action_timestamps:
-                sys.stdout.write("Command execution start timestamp: %s: %f\n"%(str(self.node), start_time))
-                sys.stdout.write("Command execution end timestamp: %s: %f\n"%(str(self.node), finish_time))
-            sys.stdout.write("Command execution time: %s: %f seconds\n"%(str(self.node), finish_time-start_time))
+                sys.stdout.write(
+                    "Command execution start timestamp: %s: %f\n"
+                    % (str(self.node), start_time)
+                )
+                sys.stdout.write(
+                    "Command execution end timestamp: %s: %f\n"
+                    % (str(self.node), finish_time)
+                )
+            sys.stdout.write(
+                "Command execution time: %s: %f seconds\n"
+                % (str(self.node), (finish_time - start_time))
+            )
 
     def do_failed(self, status=2):
         _BuildFailures.append(self.exception[1])
@@ -454,7 +453,7 @@ def python_version_string():
     return sys.version.split()[0]
 
 def python_version_unsupported(version=sys.version_info):
-    return version < unsupported_python_version
+    return version < minimum_python_version
 
 def python_version_deprecated(version=sys.version_info):
     return version < deprecated_python_version
@@ -492,6 +491,26 @@ def GetOption(name):
 
 def SetOption(name, value):
     return OptionsParser.values.set_option(name, value)
+
+
+def ValidateOptions(throw_exception=False) -> None:
+    """Validate options passed to SCons on the command line.
+
+    If you call this after you set all your command line options with AddOption(),
+    it will verify that all command line options are valid.
+    So if you added an option --xyz and you call SCons with --xyy you can cause
+    SCons to issue an error message and exit by calling this function.
+
+    :param bool throw_exception: (Optional) Should this function raise an error if there's an invalid option on the command line, or issue a message and exit with error status.
+
+    :raises SConsBadOptionError: If throw_exception is True and there are invalid options on command line.
+
+    .. versionadded:: 4.5.0
+    """
+
+    OptionsParser.raise_exception_on_error = throw_exception
+    OptionsParser.preserve_unknown_options = False
+    OptionsParser.parse_args(OptionsParser.largs, OptionsParser.values)
 
 def PrintHelp(file=None):
     OptionsParser.print_help(file=file)
@@ -671,22 +690,22 @@ def _set_debug_values(options):
     if print_objects:
         SCons.Debug.track_instances = True
     if "presub" in debug_values:
-        SCons.Action.print_actions_presub = 1
+        SCons.Action.print_actions_presub = True
     if "stacktrace" in debug_values:
-        print_stacktrace = 1
+        print_stacktrace = True
     if "stree" in debug_values:
         options.tree_printers.append(TreePrinter(status=True))
     if "time" in debug_values:
-        print_time = 1
+        print_time = True
     if "action-timestamps" in debug_values:
-        print_time = 1
-        print_action_timestamps = 1
+        print_time = True
+        print_action_timestamps = True
     if "tree" in debug_values:
         options.tree_printers.append(TreePrinter())
     if "prepare" in debug_values:
-        SCons.Taskmaster.print_prepare = 1
+        SCons.Taskmaster.print_prepare = True
     if "duplicate" in debug_values:
-        SCons.Node.print_duplicate = 1
+        SCons.Node.print_duplicate = True
 
 def _create_path(plist):
     path = '.'
@@ -779,7 +798,7 @@ def _load_site_scons_dir(topdir, site_dir_name=None):
         raise
 
 
-def _load_all_site_scons_dirs(topdir, verbose=None):
+def _load_all_site_scons_dirs(topdir, verbose=False):
     """Load all of the predefined site_scons dir.
     Order is significant; we load them in order from most generic
     (machine-wide) to most specific (topdir).
@@ -791,13 +810,12 @@ def _load_all_site_scons_dirs(topdir, verbose=None):
         return os.path.expanduser('~/'+d)
 
     if platform == 'win32' or platform == 'cygwin':
-        # Note we use $ here instead of %...% because older
-        # pythons (prior to 2.6?) didn't expand %...% on Windows.
-        # This set of dirs should work on XP, Vista, 7 and later.
         sysdirs=[
-            os.path.expandvars('$ALLUSERSPROFILE\\Application Data\\scons'),
-            os.path.expandvars('$USERPROFILE\\Local Settings\\Application Data\\scons')]
-        appdatadir = os.path.expandvars('$APPDATA\\scons')
+            os.path.expandvars('%AllUsersProfile%\\scons'),
+            # TODO older path, kept for compat
+            os.path.expandvars('%AllUsersProfile%\\Application Data\\scons'),
+            os.path.expandvars('%LocalAppData%\\scons')]
+        appdatadir = os.path.expandvars('%AppData%\\scons')
         if appdatadir not in sysdirs:
             sysdirs.append(appdatadir)
         sysdirs.append(homedir('.scons'))
@@ -972,10 +990,12 @@ def _main(parser):
     if options.no_progress or options.silent:
         progress_display.set_mode(0)
 
-    if options.site_dir:
-        _load_site_scons_dir(d.get_internal_path(), options.site_dir)
-    elif not options.no_site_dir:
+    # if site_dir unchanged from default None, neither --site-dir
+    # nor --no-site-dir was seen, use SCons default
+    if options.site_dir is None:
         _load_all_site_scons_dirs(d.get_internal_path())
+    elif options.site_dir:  # if a dir was set, use it
+        _load_site_scons_dir(d.get_internal_path(), options.site_dir)
 
     if options.include_dir:
         sys.path = options.include_dir + sys.path
@@ -987,14 +1007,17 @@ def _main(parser):
     # This would then cause subtle bugs, as already happened in #2971.
     if options.interactive:
         SCons.Node.interactive = True
-
-    # That should cover (most of) the options.  Next, set up the variables
-    # that hold command-line arguments, so the SConscript files that we
-    # read and execute have access to them.
+    # That should cover (most of) the options.
+    # Next, set up the variables that hold command-line arguments,
+    # so the SConscript files that we read and execute have access to them.
+    # TODO: for options defined via AddOption which take space-separated
+    # option-args, the option-args will collect into targets here,
+    # because we don't yet know to do any different.
     targets = []
     xmit_args = []
     for a in parser.largs:
-        if a[:1] == '-':
+        # Skip so-far unrecognized options, and empty string args
+        if a.startswith('-') or a in ('', '""', "''"):
             continue
         if '=' in a:
             xmit_args.append(a)
@@ -1023,7 +1046,8 @@ def _main(parser):
 
     progress_display("scons: Reading SConscript files ...")
 
-    start_time = time.time()
+    if print_time:
+        start_time = time.time()
     try:
         for script in scripts:
             SCons.Script._SConscript._SConscript(fs, script)
@@ -1036,8 +1060,9 @@ def _main(parser):
         revert_io()
         sys.stderr.write("scons: *** %s  Stop.\n" % e)
         sys.exit(2)
-    global sconscript_time
-    sconscript_time = time.time() - start_time
+    if print_time:
+        global sconscript_time
+        sconscript_time = time.time() - start_time
 
     progress_display("scons: done reading SConscript files.")
 
@@ -1109,10 +1134,13 @@ def _main(parser):
     SCons.Node.FS.set_duplicate(options.duplicate)
     fs.set_max_drift(options.max_drift)
 
-    SCons.Job.explicit_stack_size = options.stack_size
+    SCons.Taskmaster.Job.explicit_stack_size = options.stack_size
 
+    # Hash format and chunksize are set late to support SetOption being called
+    # in a SConscript or SConstruct file.
+    SCons.Util.set_hash_format(options.hash_format)
     if options.md5_chunksize:
-        SCons.Node.FS.File.md5_chunksize = options.md5_chunksize
+        SCons.Node.FS.File.hash_chunksize = options.md5_chunksize * 1024
 
     platform = SCons.Platform.platform_module()
 
@@ -1263,37 +1291,29 @@ def _build_targets(fs, options, targets, target_top):
             """Leave the order of dependencies alone."""
             return dependencies
 
-    def tmtrace_cleanup(tfile):
-        tfile.close()
-
-    if options.taskmastertrace_file == '-':
-        tmtrace = sys.stdout
-    elif options.taskmastertrace_file:
-        tmtrace = open(options.taskmastertrace_file, 'w')
-        atexit.register(tmtrace_cleanup, tmtrace)
-    else:
-        tmtrace = None
-    taskmaster = SCons.Taskmaster.Taskmaster(nodes, task_class, order, tmtrace)
+    taskmaster = SCons.Taskmaster.Taskmaster(nodes, task_class, order, options.taskmastertrace_file)
 
     # Let the BuildTask objects get at the options to respond to the
     # various print_* settings, tree_printer list, etc.
     BuildTask.options = options
 
-
     is_pypy = platform.python_implementation() == 'PyPy'
     # As of 3.7, python removed support for threadless platforms.
     # See https://www.python.org/dev/peps/pep-0011/
     is_37_or_later = sys.version_info >= (3, 7)
-    python_has_threads = sysconfig.get_config_var('WITH_THREAD') or is_pypy or is_37_or_later
+    # python_has_threads = sysconfig.get_config_var('WITH_THREAD') or is_pypy or is_37_or_later
+
+    # As of python 3.4 threading has a dummy_threading module for use when there is no threading
+    # it's get_ident() will allways return -1, while real threading modules get_ident() will
+    # always return a positive integer
+    python_has_threads = threading.get_ident() != -1
     # to check if python configured with threads.
     global num_jobs
     num_jobs = options.num_jobs
-    jobs = SCons.Job.Jobs(num_jobs, taskmaster)
+    jobs = SCons.Taskmaster.Job.Jobs(num_jobs, taskmaster)
     if num_jobs > 1:
         msg = None
-        if sys.platform == 'win32':
-            msg = fetch_win32_parallel_msg()
-        elif jobs.num_jobs == 1 or not python_has_threads:
+        if jobs.num_jobs == 1 or not python_has_threads:
             msg = "parallel builds are unsupported by this version of Python;\n" + \
                   "\tignoring -j or num_jobs option.\n"
         if msg:
@@ -1343,8 +1363,7 @@ def _exec_main(parser, values):
         import pdb
         pdb.Pdb().runcall(_main, parser)
     elif options.profile_file:
-        # compat layer imports "cProfile" for us if it's available.
-        from profile import Profile
+        from cProfile import Profile
 
         prof = Profile()
         try:
@@ -1353,6 +1372,7 @@ def _exec_main(parser, values):
             prof.dump_stats(options.profile_file)
     else:
         _main(parser)
+
 
 def main():
     global OptionsParser
@@ -1365,7 +1385,8 @@ def main():
     # disable that warning.
     if python_version_unsupported():
         msg = "scons: *** SCons version %s does not run under Python version %s.\n"
-        sys.stderr.write(msg % (SCons.__version__, python_version_string()))
+        sys.stderr.write(msg % (SConsVersion, python_version_string()))
+        sys.stderr.write("scons: *** Minimum Python version is %d.%d.%d\n" %minimum_python_version)
         sys.exit(1)
 
     parts = ["SCons by Steven Knight et al.:\n"]

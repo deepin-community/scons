@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,9 +22,6 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 """
 Test LEX and LEXFLAGS and unistd.h with a live lex in mingw environment.
@@ -31,17 +30,18 @@ Test LEX and LEXFLAGS and unistd.h with a live lex in mingw environment.
 import sys
 
 import TestSCons
+from TestCmd import IS_WINDOWS
 
 _exe = TestSCons._exe
 _python_ = TestSCons._python_
 
 test = TestSCons.TestSCons()
 
-if sys.platform != 'win32':
+if not IS_WINDOWS:
     test.skip_test('Not windows environment; skipping test.\n')
 
 if not test.where_is('gcc'):
-        test.skip_test('No mingw or cygwin build environment found; skipping test.\n')
+    test.skip_test('No mingw or cygwin build environment found; skipping test.\n')
 
 lex = test.where_is('lex') or test.where_is('flex')
 
@@ -51,14 +51,17 @@ if not lex:
 test.file_fixture('wrapper.py')
 
 test.write('SConstruct', """
+DefaultEnvironment(tools=[])
 foo = Environment(tools=['default', 'mingw', 'lex'], LEXUNISTD="")
 lex = foo.Dictionary('LEX')
-bar = Environment(LEX = r'%(_python_)s wrapper.py ' + lex,
-                  LEXFLAGS = '-b',
-                  LEXUNISTD="",
-                  tools=['default', 'mingw', 'lex'])
-foo.Program(target = 'foo', source = 'foo.l')
-bar.Program(target = 'bar', source = 'bar.l')
+bar = Environment(
+    LEX=r'%(_python_)s wrapper.py ' + lex,
+    LEXFLAGS='-b',
+    LEXUNISTD="",
+    tools=['default', 'mingw', 'lex'],
+)
+foo.Program(target='foo', source='foo.l')
+bar.Program(target='bar', source='bar.l')
 """ % locals())
 
 lex = r"""

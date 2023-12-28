@@ -1,15 +1,6 @@
-"""SCons.Tool.mslink
-
-Tool-specific initialization for the Microsoft linker.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -29,8 +20,16 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""SCons.Tool.mslink
+
+Tool-specific initialization for the Microsoft linker.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+
+"""
 
 import os
 import os.path
@@ -44,7 +43,10 @@ import SCons.Tool.msvc
 import SCons.Tool.msvs
 import SCons.Util
 
-from .MSCommon import msvc_setup_env_once, msvc_exists
+from .MSCommon import msvc_setup_env_once, msvc_setup_env_tool
+from .MSCommon.common import get_pch_node
+
+tool_name = 'mslink'
 
 def pdbGenerator(env, target, source, for_signature):
     try:
@@ -129,10 +131,11 @@ def _dllEmitter(target, source, env, paramtp):
         extratargets.append(pdb)
         target[0].attributes.pdb = pdb
 
-    if version_num >= 11.0 and env.get('PCH', 0):
+    pch_node = get_pch_node(env, target, source)
+    if version_num >= 11.0 and pch_node:
         # MSVC 11 and above need the PCH object file to be added to the link line,
         # otherwise you get link error LNK2011.
-        pchobj = SCons.Util.splitext(str(env['PCH']))[0] + '.obj'
+        pchobj = SCons.Util.splitext(str(pch_node))[0] + '.obj'
         # print "prog_emitter, version %s, appending pchobj %s"%(version_num, pchobj)
         if pchobj not in extrasources:
             extrasources.append(pchobj)
@@ -187,11 +190,12 @@ def prog_emitter(target, source, env):
         extratargets.append(pdb)
         target[0].attributes.pdb = pdb
 
-    if version_num >= 11.0 and env.get('PCH', 0):
+    pch_node = get_pch_node(env, target, source)
+    if version_num >= 11.0 and pch_node:
         # MSVC 11 and above need the PCH object file to be added to the link line,
         # otherwise you get link error LNK2011.
-        pchobj = SCons.Util.splitext(str(env['PCH']))[0] + '.obj'
-        # print("prog_emitter, version %s, appending pchobj %s"%(version_num, pchobj))
+        pchobj = SCons.Util.splitext(str(pch_node))[0] + '.obj'
+        # print "prog_emitter, version %s, appending pchobj %s"%(version_num, pchobj)
         if pchobj not in extrasources:
             extrasources.append(pchobj)
 
@@ -254,69 +258,64 @@ compositeLinkAction = exeLinkAction + embedManifestExeCheckAction
 
 def generate(env):
     """Add Builders and construction variables for ar to an Environment."""
-    SCons.Tool.createSharedLibBuilder(env)
+    SCons.Tool.createSharedLibBuilder(env, shlib_suffix='$SHLIBSUFFIX')
     SCons.Tool.createProgBuilder(env)
 
-    env['SHLINK']      = '$LINK'
+    env['SHLINK'] = '$LINK'
     env['SHLINKFLAGS'] = SCons.Util.CLVar('$LINKFLAGS /dll')
     env['_SHLINK_TARGETS'] = windowsShlinkTargets
     env['_SHLINK_SOURCES'] = windowsShlinkSources
-    env['SHLINKCOM']   =  compositeShLinkAction
-    env.Append(SHLIBEMITTER = [windowsLibEmitter])
-    env.Append(LDMODULEEMITTER = [windowsLibEmitter])
-    env['LINK']        = 'link'
-    env['LINKFLAGS']   = SCons.Util.CLVar('/nologo')
+    env['SHLINKCOM'] = compositeShLinkAction
+    env.Append(SHLIBEMITTER=[windowsLibEmitter])
+    env.Append(LDMODULEEMITTER=[windowsLibEmitter])
+    env['LINK'] = 'link'
+    env['LINKFLAGS'] = SCons.Util.CLVar('/nologo')
     env['_PDB'] = pdbGenerator
     env['LINKCOM'] = compositeLinkAction
-    env.Append(PROGEMITTER = [prog_emitter])
-    env['LIBDIRPREFIX']='/LIBPATH:'
-    env['LIBDIRSUFFIX']=''
-    env['LIBLINKPREFIX']=''
-    env['LIBLINKSUFFIX']='$LIBSUFFIX'
+    env.Append(PROGEMITTER=[prog_emitter])
+    env['LIBDIRPREFIX'] = '/LIBPATH:'
+    env['LIBDIRSUFFIX'] = ''
+    env['LIBLINKPREFIX'] = ''
+    env['LIBLINKSUFFIX'] = '$LIBSUFFIX'
 
-    env['WIN32DEFPREFIX']        = ''
-    env['WIN32DEFSUFFIX']        = '.def'
-    env['WIN32_INSERT_DEF']      = 0
-    env['WINDOWSDEFPREFIX']      = '${WIN32DEFPREFIX}'
-    env['WINDOWSDEFSUFFIX']      = '${WIN32DEFSUFFIX}'
-    env['WINDOWS_INSERT_DEF']    = '${WIN32_INSERT_DEF}'
-
-    env['WIN32EXPPREFIX']        = ''
-    env['WIN32EXPSUFFIX']        = '.exp'
-    env['WINDOWSEXPPREFIX']      = '${WIN32EXPPREFIX}'
-    env['WINDOWSEXPSUFFIX']      = '${WIN32EXPSUFFIX}'
+    env['WINDOWSDEFPREFIX'] = ''
+    env['WINDOWSDEFSUFFIX'] = '.def'
+    env['WINDOWSEXPPREFIX'] = ''
+    env['WINDOWSEXPSUFFIX'] = '.exp'
+    env['WINDOWS_INSERT_DEF'] = 0
 
     env['WINDOWSSHLIBMANIFESTPREFIX'] = ''
     env['WINDOWSSHLIBMANIFESTSUFFIX'] = '${SHLIBSUFFIX}.manifest'
-    env['WINDOWSPROGMANIFESTPREFIX']  = ''
-    env['WINDOWSPROGMANIFESTSUFFIX']  = '${PROGSUFFIX}.manifest'
+    env['WINDOWSPROGMANIFESTPREFIX'] = ''
+    env['WINDOWSPROGMANIFESTSUFFIX'] = '${PROGSUFFIX}.manifest'
 
     env['REGSVRACTION'] = regServerCheck
-    env['REGSVR'] = os.path.join(SCons.Platform.win32.get_system_root(),'System32','regsvr32')
+    env['REGSVR'] = os.path.join(
+        SCons.Platform.win32.get_system_root(), 'System32', 'regsvr32'
+    )
     env['REGSVRFLAGS'] = '/s '
     env['REGSVRCOM'] = '$REGSVR $REGSVRFLAGS ${TARGET.windows}'
 
     env['WINDOWS_EMBED_MANIFEST'] = 0
     env['MT'] = 'mt'
-    #env['MTFLAGS'] = ['-hashupdate']
+    # env['MTFLAGS'] = ['-hashupdate']
     env['MTFLAGS'] = SCons.Util.CLVar('/nologo')
     # Note: use - here to prevent build failure if no manifest produced.
     # This seems much simpler than a fancy system using a function action to see
     # if the manifest actually exists before trying to run mt with it.
-    env['MTEXECOM']   = '-$MT $MTFLAGS -manifest ${TARGET}.manifest $_MANIFEST_SOURCES -outputresource:$TARGET;1'
+    env['MTEXECOM'] = '-$MT $MTFLAGS -manifest ${TARGET}.manifest $_MANIFEST_SOURCES -outputresource:$TARGET;1'
     env['MTSHLIBCOM'] = '-$MT $MTFLAGS -manifest ${TARGET}.manifest $_MANIFEST_SOURCES -outputresource:$TARGET;2'
     # TODO Future work garyo 27-Feb-11
-    env['_MANIFEST_SOURCES'] = None # _windowsManifestSources
+    env['_MANIFEST_SOURCES'] = None  # _windowsManifestSources
 
     # Set-up ms tools paths
-    msvc_setup_env_once(env)
-
+    msvc_setup_env_once(env, tool=tool_name)
 
     # Loadable modules are on Windows the same as shared libraries, but they
     # are subject to different build parameters (LDMODULE* variables).
     # Therefore LDMODULE* variables correspond as much as possible to
     # SHLINK*/SHLIB* ones.
-    SCons.Tool.createLoadableModuleBuilder(env)
+    SCons.Tool.createLoadableModuleBuilder(env, loadable_module_suffix='$LDMODULESUFFIX')
     env['LDMODULE'] = '$SHLINK'
     env['LDMODULEPREFIX'] = '$SHLIBPREFIX'
     env['LDMODULESUFFIX'] = '$SHLIBSUFFIX'
@@ -333,7 +332,7 @@ def generate(env):
     env['TEMPFILEARGJOIN'] = os.linesep
 
 def exists(env):
-    return msvc_exists(env)
+    return msvc_setup_env_tool(env, tool=tool_name)
 
 # Local Variables:
 # tab-width:4

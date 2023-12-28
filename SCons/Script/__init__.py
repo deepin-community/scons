@@ -1,18 +1,6 @@
-"""SCons.Script
-
-This file implements the main() function used by the scons script.
-
-Architecturally, this *is* the scons script, and will likely only be
-called from the external "scons" wrapper.  Consequently, anything here
-should not be, or be considered, part of the build engine.  If it's
-something that we expect other software to want to use, it should go in
-some other module.  If it's specific to the "scons" script invocation,
-it goes here.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -32,20 +20,23 @@ it goes here.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""The main() function used by the scons script.
+
+Architecturally, this *is* the scons script, and will likely only be
+called from the external "scons" wrapper.  Consequently, anything here
+should not be, or be considered, part of the build engine.  If it's
+something that we expect other software to want to use, it should go in
+some other module.  If it's specific to the "scons" script invocation,
+it goes here.
+"""
 
 import time
 start_time = time.time()
 
 import collections
 import os
-
-try:
-    from StringIO import StringIO
-except ImportError:
-    from io import StringIO
+from io import StringIO
 
 import sys
 
@@ -69,7 +60,7 @@ if "--debug=memoizer" in _args:
     import SCons.Warnings
     try:
         SCons.Memoize.EnableMemoization()
-    except SCons.Warnings.Warning:
+    except SCons.Warnings.SConsWarning:
         # Some warning was thrown.  Arrange for it to be displayed
         # or not after warnings are configured.
         from . import Main
@@ -116,6 +107,7 @@ AddOption               = Main.AddOption
 PrintHelp               = Main.PrintHelp
 GetOption               = Main.GetOption
 SetOption               = Main.SetOption
+ValidateOptions         = Main.ValidateOptions
 Progress                = Main.Progress
 GetBuildFailures        = Main.GetBuildFailures
 
@@ -134,9 +126,7 @@ GetBuildFailures        = Main.GetBuildFailures
 #profiling               = Main.profiling
 #repositories            = Main.repositories
 
-#
-from . import SConscript
-_SConscript = SConscript
+from . import SConscript as _SConscript
 
 call_stack              = _SConscript.call_stack
 
@@ -152,7 +142,7 @@ FindPathDirs            = SCons.Scanner.FindPathDirs
 Platform                = SCons.Platform.Platform
 Virtualenv              = SCons.Platform.virtualenv.Virtualenv
 Return                  = _SConscript.Return
-Scanner                 = SCons.Scanner.Base
+Scanner                 = SCons.Scanner.ScannerBase
 Tool                    = SCons.Tool.Tool
 WhereIs                 = SCons.Util.WhereIs
 
@@ -265,7 +255,7 @@ def HelpFunction(text, append=False):
     if help_text is None:
         if append:
             s = StringIO()
-            PrintHelp(s)  
+            PrintHelp(s)
             help_text = s.getvalue()
             s.close()
         else:
@@ -282,7 +272,11 @@ _no_missing_sconscript = False
 _warn_missing_sconscript_deprecated = True
 
 def set_missing_sconscript_error(flag=1):
-    """Set behavior on missing file in SConscript() call. Returns previous value"""
+    """Set behavior on missing file in SConscript() call.
+
+    Returns:
+        previous value
+    """
     global _no_missing_sconscript
     old = _no_missing_sconscript
     _no_missing_sconscript = flag
@@ -293,21 +287,25 @@ def Variables(files=None, args=ARGUMENTS):
     return SCons.Variables.Variables(files, args)
 
 
-# The list of global functions to add to the SConscript name space
-# that end up calling corresponding methods or Builders in the
+# Adding global functions to the SConscript name space.
+#
+# Static functions that do not trigger initialization of
+# DefaultEnvironment() and don't use its state.
+EnsureSConsVersion = _SConscript.SConsEnvironment.EnsureSConsVersion
+EnsurePythonVersion = _SConscript.SConsEnvironment.EnsurePythonVersion
+Exit = _SConscript.SConsEnvironment.Exit
+GetLaunchDir = _SConscript.SConsEnvironment.GetLaunchDir
+SConscriptChdir = _SConscript.SConsEnvironment.SConscriptChdir
+
+# Functions that end up calling methods or Builders in the
 # DefaultEnvironment().
 GlobalDefaultEnvironmentFunctions = [
     # Methods from the SConsEnvironment class, above.
     'Default',
-    'EnsurePythonVersion',
-    'EnsureSConsVersion',
-    'Exit',
     'Export',
-    'GetLaunchDir',
     'Help',
     'Import',
     #'SConscript', is handled separately, below.
-    'SConscriptChdir',
 
     # Methods from the Environment.Base class.
     'AddPostAction',
@@ -381,6 +379,8 @@ GlobalDefaultBuilders = [
     'Package',
 ]
 
+# DefaultEnvironmentCall() initializes DefaultEnvironment() if it is not
+# created yet.
 for name in GlobalDefaultEnvironmentFunctions + GlobalDefaultBuilders:
     exec ("%s = _SConscript.DefaultEnvironmentCall(%s)" % (name, repr(name)))
 del name

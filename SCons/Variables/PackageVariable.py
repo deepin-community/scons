@@ -1,34 +1,6 @@
-"""SCons.Variables.PackageVariable
-
-This file defines the option type for SCons implementing 'package
-activation'.
-
-To be used whenever a 'package' may be enabled/disabled and the
-package path may be specified.
-
-Usage example:
-
-  Examples:
-      x11=no   (disables X11 support)
-      x11=yes  (will search for the package installation dir)
-      x11=/usr/local/X11 (will check this path for existence)
-
-  To replace autoconf's --with-xxx=yyy ::
-
-      opts = Variables()
-      opts.Add(PackageVariable('x11',
-                             'use X11 installed here (yes = search some places',
-                             'yes'))
-      ...
-      if env['x11'] == True:
-          dir = ... search X11 in some standard places ...
-          env['x11'] = dir
-      if env['x11']:
-          ... build with x11 ...
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -48,33 +20,61 @@ Usage example:
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Variable type for package Variables.
 
-__all__ = ['PackageVariable',]
+To be used whenever a 'package' may be enabled/disabled and the
+package path may be specified.
+
+Given these options ::
+
+   x11=no   (disables X11 support)
+   x11=yes  (will search for the package installation dir)
+   x11=/usr/local/X11 (will check this path for existence)
+
+Can be used as a replacement for autoconf's ``--with-xxx=yyy`` ::
+
+    opts = Variables()
+    opts.Add(
+        PackageVariable(
+            key='x11',
+            help='use X11 installed here (yes = search some places)',
+            default='yes'
+        )
+    )
+    ...
+    if env['x11'] == True:
+        dir = ...  # search X11 in some standard places ...
+        env['x11'] = dir
+    if env['x11']:
+        ...  # build with x11 ...
+"""
+
+from typing import Tuple, Callable
 
 import SCons.Errors
 
-__enable_strings  = ('1', 'yes', 'true',  'on', 'enable', 'search')
-__disable_strings = ('0', 'no',  'false', 'off', 'disable')
+__all__ = ['PackageVariable',]
+
+ENABLE_STRINGS = ('1', 'yes', 'true',  'on', 'enable', 'search')
+DISABLE_STRINGS = ('0', 'no',  'false', 'off', 'disable')
 
 def _converter(val):
-    """
-    """
+    """ """
     lval = val.lower()
-    if lval in __enable_strings: return True
-    if lval in __disable_strings: return False
-    #raise ValueError("Invalid value for boolean option: %s" % val)
+    if lval in ENABLE_STRINGS:
+        return True
+    if lval in DISABLE_STRINGS:
+        return False
     return val
 
 
-def _validator(key, val, env, searchfunc):
+def _validator(key, val, env, searchfunc) -> None:
+    """ """
     # NB: searchfunc is currently undocumented and unsupported
-    """
-    """
     # TODO write validator, check for path
     import os
+
     if env[key] is True:
         if searchfunc:
             env[key] = searchfunc(key, val)
@@ -83,20 +83,21 @@ def _validator(key, val, env, searchfunc):
             'Path does not exist for option %s: %s' % (key, val))
 
 
-def PackageVariable(key, help, default, searchfunc=None):
-    # NB: searchfunc is currently undocumented and unsupported
-    """
-    The input parameters describe a 'package list' option, thus they
-    are returned with the correct converter and validator appended. The
-    result is usable for input to opts.Add() .
+def PackageVariable(key, help, default, searchfunc=None) -> Tuple[str, str, str, Callable, Callable]:
+    """Return a tuple describing a package list SCons Variable.
 
-    A 'package list' option may either be 'all', 'none' or a list of
-    package names (separated by space).
+    The input parameters describe a 'package list' option. Returns
+    a tuple including the correct converter and validator appended.
+    The result is usable as input to :meth:`Add` .
+
+    A 'package list' option may either be 'all', 'none' or a pathname
+    string. This information is appended to *help*.
     """
+    # NB: searchfunc is currently undocumented and unsupported
     help = '\n    '.join(
         (help, '( yes | no | /path/to/%s )' % key))
     return (key, help, default,
-            lambda k, v, e: _validator(k,v,e,searchfunc),
+            lambda k, v, e: _validator(k, v, e, searchfunc),
             _converter)
 
 # Local Variables:

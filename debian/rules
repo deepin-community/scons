@@ -17,11 +17,19 @@ override_dh_auto_build:
 	cd $(CURDIR)/doc/user && python3 ../../scripts/scons.py
 
 override_dh_auto_install:
-	python3 setup.py install --prefix /usr --root '$(CURDIR)/debian/scons'
-	$(RM) -r debian/scons/usr/lib/python*/site-packages/SCons/Tool/docbook/
+	# setup.cfg contains bad path for man pages
+	cp -av $(CURDIR)/doc/man/*.1 $(CURDIR)
+	python3 setup.py install \
+		--prefix /usr \
+		--install-data=/usr/share/man/man1/ \
+		--root '$(CURDIR)/debian/scons'
+	mv $(CURDIR)/debian/scons/usr/local/bin/ $(CURDIR)/debian/scons/usr/
+	$(RM) -r debian/scons/usr/local/lib/python*/dist-packages/SCons/Tool/docbook/
 
 override_dh_auto_clean:
 	$(RM) -r .sconsign.dblite bootstrap build $$(find * -name __pycache__ -type d)
+	$(RM) $(CURDIR)/*.1
+	$(RM) $(CURDIR)/failed_tests.log
 	$(RM) -r $(CURDIR)/SCons.egg-info $(CURDIR)/.pybuild
 	# generated documentation
 	$(RM) $(CURDIR)/doc/man/.sconsign.dblite

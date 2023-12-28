@@ -1,8 +1,6 @@
-"""
-Common helper functions for working with the Microsoft tool chain.
-"""
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -22,8 +20,10 @@ Common helper functions for working with the Microsoft tool chain.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""
+Common helper functions for working with the Microsoft tool chain.
+"""
 
 import copy
 import json
@@ -31,47 +31,107 @@ import os
 import re
 import subprocess
 import sys
+from contextlib import suppress
+from pathlib import Path
 
 import SCons.Util
+import SCons.Warnings
+
+class MSVCCacheInvalidWarning(SCons.Warnings.WarningOnByDefault):
+    pass
 
 # SCONS_MSCOMMON_DEBUG is internal-use so undocumented:
 # set to '-' to print to console, else set to filename to log to
 LOGFILE = os.environ.get('SCONS_MSCOMMON_DEBUG')
-if LOGFILE == '-':
-    def debug(message):
-        print(message)
-elif LOGFILE:
+if LOGFILE:
     import logging
-    logging.basicConfig(
-        # This looks like:
-        #   00109ms:MSCommon/vc.py:find_vc_pdir#447:
-        format=(
-            '%(relativeCreated)05dms'
-            ':MSCommon/%(filename)s'
-            ':%(funcName)s'
-            '#%(lineno)s'
-            ':%(message)s: '
-        ),
-        filename=LOGFILE,
-        level=logging.DEBUG)
-    debug = logging.getLogger(name=__name__).debug
+
+    modulelist = (
+        # root module and parent/root module
+        'MSCommon', 'Tool',
+        # python library and below: correct iff scons does not have a lib folder
+        'lib',
+        # scons modules
+        'SCons', 'test', 'scons'
+    )
+
+    def get_relative_filename(filename, module_list):
+        if not filename:
+            return filename
+        for module in module_list:
+            try:
+                ind = filename.rindex(module)
+                return filename[ind:]
+            except ValueError:
+                pass
+        return filename
+
+    class _Debug_Filter(logging.Filter):
+        # custom filter for module relative filename
+        def filter(self, record):
+            relfilename = get_relative_filename(record.pathname, modulelist)
+            relfilename = relfilename.replace('\\', '/')
+            record.relfilename = relfilename
+            return True
+
+    # Log format looks like:
+    #   00109ms:MSCommon/vc.py:find_vc_pdir#447: VC found '14.3'        [file]
+    #   debug: 00109ms:MSCommon/vc.py:find_vc_pdir#447: VC found '14.3' [stdout]
+    log_format=(
+        '%(relativeCreated)05dms'
+        ':%(relfilename)s'
+        ':%(funcName)s'
+        '#%(lineno)s'
+        ': %(message)s'
+    )
+    if LOGFILE == '-':
+        log_format = 'debug: ' + log_format
+        log_handler = logging.StreamHandler(sys.stdout)
+    else:
+        log_handler = logging.FileHandler(filename=LOGFILE)
+    log_formatter = logging.Formatter(log_format)
+    log_handler.setFormatter(log_formatter)
+    logger = logging.getLogger(name=__name__)
+    logger.setLevel(level=logging.DEBUG)
+    logger.addHandler(log_handler)
+    logger.addFilter(_Debug_Filter())
+    debug = logger.debug
 else:
-    def debug(x): return None
+    def debug(x, *args):
+        return None
 
 
 # SCONS_CACHE_MSVC_CONFIG is public, and is documented.
 CONFIG_CACHE = os.environ.get('SCONS_CACHE_MSVC_CONFIG')
 if CONFIG_CACHE in ('1', 'true', 'True'):
-    CONFIG_CACHE = os.path.join(os.path.expanduser('~'), '.scons_msvc_cache')
+    CONFIG_CACHE = os.path.join(os.path.expanduser('~'), 'scons_msvc_cache.json')
 
+# SCONS_CACHE_MSVC_FORCE_DEFAULTS is internal-use so undocumented.
+CONFIG_CACHE_FORCE_DEFAULT_ARGUMENTS = False
+if CONFIG_CACHE:
+    if os.environ.get('SCONS_CACHE_MSVC_FORCE_DEFAULTS') in ('1', 'true', 'True'):
+        CONFIG_CACHE_FORCE_DEFAULT_ARGUMENTS = True
 
 def read_script_env_cache():
     """ fetch cached msvc env vars if requested, else return empty dict """
     envcache = {}
     if CONFIG_CACHE:
         try:
-            with open(CONFIG_CACHE, 'r') as f:
-                envcache = json.load(f)
+            p = Path(CONFIG_CACHE)
+            with p.open('r') as f:
+                # Convert the list of cache entry dictionaries read from
+                # json to the cache dictionary. Reconstruct the cache key
+                # tuple from the key list written to json.
+                envcache_list = json.load(f)
+                if isinstance(envcache_list, list):
+                    envcache = {tuple(d['key']): d['data'] for d in envcache_list}
+                else:
+                    # don't fail if incompatible format, just proceed without it
+                    warn_msg = "Incompatible format for msvc cache file {}: file may be overwritten.".format(
+                        repr(CONFIG_CACHE)
+                    )
+                    SCons.Warnings.warn(MSVCCacheInvalidWarning, warn_msg)
+                    debug(warn_msg)
         except FileNotFoundError:
             # don't fail if no cache file, just proceed without it
             pass
@@ -82,11 +142,17 @@ def write_script_env_cache(cache):
     """ write out cache of msvc env vars if requested """
     if CONFIG_CACHE:
         try:
-            with open(CONFIG_CACHE, 'w') as f:
-                json.dump(cache, f, indent=2)
+            p = Path(CONFIG_CACHE)
+            with p.open('w') as f:
+                # Convert the cache dictionary to a list of cache entry
+                # dictionaries. The cache key is converted from a tuple to
+                # a list for compatibility with json.
+                envcache_list = [{'key': list(key), 'data': data} for key, data in cache.items()]
+                json.dump(envcache_list, f, indent=2)
         except TypeError:
             # data can't serialize to json, don't leave partial file
-            os.remove(CONFIG_CACHE)
+            with suppress(FileNotFoundError):
+                p.unlink()
         except IOError:
             # can't write the file, just skip
             pass
@@ -136,7 +202,7 @@ def has_reg(value):
     try:
         SCons.Util.RegOpenKeyEx(SCons.Util.HKEY_LOCAL_MACHINE, value)
         ret = True
-    except SCons.Util.WinError:
+    except OSError:
         ret = False
     return ret
 
@@ -169,7 +235,7 @@ def normalize_env(env, keys, force=False):
     # should include it, but keep this here to be safe (needed for reg.exe)
     sys32_dir = os.path.join(
         os.environ.get("SystemRoot", os.environ.get("windir", r"C:\Windows")), "System32"
-)
+    )
     if sys32_dir not in normenv["PATH"]:
         normenv["PATH"] = normenv["PATH"] + os.pathsep + sys32_dir
 
@@ -187,7 +253,7 @@ def normalize_env(env, keys, force=False):
     if sys32_ps_dir not in normenv['PATH']:
         normenv['PATH'] = normenv['PATH'] + os.pathsep + sys32_ps_dir
 
-    debug("PATH: %s" % normenv['PATH'])
+    debug("PATH: %s", normenv['PATH'])
     return normenv
 
 
@@ -211,7 +277,9 @@ def get_output(vcbat, args=None, env=None):
     # or synced with the the common_tools_var # settings in vs.py.
     vs_vc_vars = [
         'COMSPEC',  # path to "shell"
-        'VS160COMNTOOLS',  # path to common tools for given version
+        'OS', # name of OS family: Windows_NT or undefined (95/98/ME)
+        'VS170COMNTOOLS',  # path to common tools for given version
+        'VS160COMNTOOLS',
         'VS150COMNTOOLS',
         'VS140COMNTOOLS',
         'VS120COMNTOOLS',
@@ -220,22 +288,23 @@ def get_output(vcbat, args=None, env=None):
         'VS90COMNTOOLS',
         'VS80COMNTOOLS',
         'VS71COMNTOOLS',
-        'VS70COMNTOOLS',
-        'VS60COMNTOOLS',
+        'VSCOMNTOOLS',
+        'MSDevDir',
         'VSCMD_DEBUG',   # enable logging and other debug aids
         'VSCMD_SKIP_SENDTELEMETRY',
+        'windir', # windows directory (SystemRoot not available in 95/98/ME)
     ]
     env['ENV'] = normalize_env(env['ENV'], vs_vc_vars, force=False)
 
     if args:
-        debug("Calling '%s %s'" % (vcbat, args))
+        debug("Calling '%s %s'", vcbat, args)
         popen = SCons.Action._subproc(env,
                                       '"%s" %s & set' % (vcbat, args),
                                       stdin='devnull',
                                       stdout=subprocess.PIPE,
                                       stderr=subprocess.PIPE)
     else:
-        debug("Calling '%s'" % vcbat)
+        debug("Calling '%s'", vcbat)
         popen = SCons.Action._subproc(env,
                                       '"%s" & set' % vcbat,
                                       stdin='devnull',
@@ -251,8 +320,8 @@ def get_output(vcbat, args=None, env=None):
         stderr = popen.stderr.read()
 
     # Extra debug logic, uncomment if necessary
-    # debug('stdout:%s' % stdout)
-    # debug('stderr:%s' % stderr)
+    # debug('stdout:%s', stdout)
+    # debug('stderr:%s', stderr)
 
     # Ongoing problems getting non-corrupted text led to this
     # changing to "oem" from "mbcs" - the scripts run presumably
@@ -293,7 +362,7 @@ def parse_output(output, keep=KEEPLIST):
 
     # dkeep is a dict associating key: path_list, where key is one item from
     # keep, and path_list the associated list of paths
-    dkeep = dict([(i, []) for i in keep])
+    dkeep = {i: [] for i in keep}
 
     # rdk will  keep the regex to match the .bat file output line starts
     rdk = {}
@@ -318,6 +387,21 @@ def parse_output(output, keep=KEEPLIST):
                 add_env(match, k)
 
     return dkeep
+
+def get_pch_node(env, target, source):
+    """
+    Get the actual PCH file node
+    """
+    pch_subst = env.get('PCH', False) and env.subst('$PCH',target=target, source=source, conv=lambda x:x)
+
+    if not pch_subst:
+        return ""
+
+    if SCons.Util.is_String(pch_subst):
+        pch_subst = target[0].dir.File(pch_subst)
+
+    return pch_subst
+
 
 # Local Variables:
 # tab-width:4

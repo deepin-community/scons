@@ -31,7 +31,10 @@ which is the name that most clang tools search for by default.
 
 import json
 import itertools
+import fnmatch
 import SCons
+
+from SCons.Platform import TempFileMunge
 
 from .cxx import CXXSuffixes
 from .cc import CSuffixes
@@ -103,6 +106,11 @@ def make_emit_compilation_DB_entry(comstr):
     return emit_compilation_db_entry
 
 
+class CompDBTEMPFILE(TempFileMunge):
+    def __call__(self, target, source, env, for_signature):
+        return self.cmd
+
+
 def compilation_db_entry_action(target, source, env, **kw):
     """
     Create a dictionary with evaluated command line, target, source
@@ -119,6 +127,7 @@ def compilation_db_entry_action(target, source, env, **kw):
         target=env["__COMPILATIONDB_UOUTPUT"],
         source=env["__COMPILATIONDB_USOURCE"],
         env=env["__COMPILATIONDB_ENV"],
+        overrides={'TEMPFILE': CompDBTEMPFILE}
     )
 
     entry = {
@@ -135,6 +144,7 @@ def write_compilation_db(target, source, env):
     entries = []
 
     use_abspath = env['COMPILATIONDB_USE_ABSPATH'] in [True, 1, 'True', 'true']
+    use_path_filter = env.subst('$COMPILATIONDB_PATH_FILTER')
 
     for s in __COMPILATION_DB_ENTRIES:
         entry = s.read()
@@ -148,6 +158,9 @@ def write_compilation_db(target, source, env):
             source_file = source_file.srcnode().path
             output_file = output_file.path
 
+        if use_path_filter and not fnmatch.fnmatch(output_file, use_path_filter):
+            continue
+
         path_entry = {'directory': entry['directory'],
                       'command': entry['command'],
                       'file': source_file,
@@ -159,6 +172,7 @@ def write_compilation_db(target, source, env):
         json.dump(
             entries, output_file, sort_keys=True, indent=4, separators=(",", ": ")
         )
+        output_file.write("\n")
 
 
 def scan_compilation_db(node, env, path):
@@ -244,6 +258,7 @@ def generate(env, **kwargs):
     )
 
     env['COMPILATIONDB_USE_ABSPATH'] = False
+    env['COMPILATIONDB_PATH_FILTER'] = ''
 
 
 def exists(env):

@@ -1,14 +1,6 @@
-
-"""scons.Node.Alias
-
-Alias nodes.
-
-This creates a hash of global Aliases (dummy targets).
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,16 +20,18 @@ This creates a hash of global Aliases (dummy targets).
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Alias nodes.
+
+This creates a hash of global Aliases (dummy targets).
+"""
 
 import collections
 
 import SCons.Errors
 import SCons.Node
 import SCons.Util
-from SCons.Util import MD5signature
+from SCons.Util import hash_signature
 
 class AliasNameSpace(collections.UserDict):
     def Alias(self, name, **kw):
@@ -105,7 +99,7 @@ class Alias(SCons.Node.Node):
     BuildInfo = AliasBuildInfo
 
     def __init__(self, name):
-        SCons.Node.Node.__init__(self)
+        super().__init__()
         self.name = name
         self.changed_since_last_build = 1
         self.store_info = 0
@@ -167,7 +161,7 @@ class Alias(SCons.Node.Node):
             pass
 
         contents = self.get_contents()
-        csig = MD5signature(contents)
+        csig = hash_signature(contents)
         self.get_ninfo().csig = csig
         return csig
 

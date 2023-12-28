@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,12 +20,8 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-__doc__ = """
-CacheDir support
+"""CacheDir support
 """
 
 import atexit
@@ -32,16 +29,19 @@ import json
 import os
 import stat
 import sys
+import uuid
 
 import SCons.Action
 import SCons.Errors
 import SCons.Warnings
+import SCons
 
 cache_enabled = True
 cache_debug = False
 cache_force = False
 cache_show = False
 cache_readonly = False
+cache_tmp_uuid = uuid.uuid4().hex
 
 def CacheRetrieveFunc(target, source, env):
     t = target[0]
@@ -58,7 +58,7 @@ def CacheRetrieveFunc(target, source, env):
         if fs.islink(cachefile):
             fs.symlink(fs.readlink(cachefile), t.get_internal_path())
         else:
-            env.copy_from_cache(cachefile, t.get_internal_path())
+            cd.copy_from_cache(env, cachefile, t.get_internal_path())
             try:
                 os.utime(cachefile, None)
             except OSError:
@@ -103,34 +103,29 @@ def CachePushFunc(target, source, env):
 
     cd.CacheDebug('CachePush(%s):  pushing to %s\n', t, cachefile)
 
-    tempfile = cachefile+'.tmp'+str(os.getpid())
+    tempfile = "%s.tmp%s"%(cachefile,cache_tmp_uuid)
     errfmt = "Unable to copy %s to cache. Cache file is %s"
 
-    if not fs.isdir(cachedir):
-        try:
-            fs.makedirs(cachedir)
-        except EnvironmentError:
-            # We may have received an exception because another process
-            # has beaten us creating the directory.
-            if not fs.isdir(cachedir):
-                msg = errfmt % (str(target), cachefile)
-                raise SCons.Errors.SConsEnvironmentError(msg)
-
+    try:
+        fs.makedirs(cachedir, exist_ok=True)
+    except OSError:
+        msg = errfmt % (str(target), cachefile)
+        raise SCons.Errors.SConsEnvironmentError(msg)
     try:
         if fs.islink(t.get_internal_path()):
             fs.symlink(fs.readlink(t.get_internal_path()), tempfile)
         else:
-            fs.copy2(t.get_internal_path(), tempfile)
+            cd.copy_to_cache(env, t.get_internal_path(), tempfile)
         fs.rename(tempfile, cachefile)
-        st = fs.stat(t.get_internal_path())
-        fs.chmod(cachefile, stat.S_IMODE(st[stat.ST_MODE]) | stat.S_IWRITE)
+
     except EnvironmentError:
         # It's possible someone else tried writing the file at the
         # same time we did, or else that there was some problem like
         # the CacheDir being on a separate file system that's full.
         # In any case, inability to push a file to cache doesn't affect
         # the correctness of the build, so just print a warning.
-        msg = errfmt % (str(target), cachefile)
+        msg = errfmt % (str(t), cachefile)
+        cd.CacheDebug(errfmt + '\n', str(t), cachefile)
         SCons.Warnings.warn(SCons.Warnings.CacheWriteErrorWarning, msg)
 
 CachePush = SCons.Action.Action(CachePushFunc, None)
@@ -197,7 +192,6 @@ class CacheDir:
                 msg = "Failed to read cache configuration for " + path
                 raise SCons.Errors.SConsEnvironmentError(msg)
 
-
     def CacheDebug(self, fmt, target, cachefile):
         if cache_debug != self.current_cache_debug:
             if cache_debug == '-':
@@ -216,32 +210,65 @@ class CacheDir:
             self.debugFP.write("requests: %d, hits: %d, misses: %d, hit rate: %.2f%%\n" %
                                (self.requests, self.hits, self.misses, self.hit_ratio))
 
+    @classmethod
+    def copy_from_cache(cls, env, src, dst) -> str:
+        """Copy a file from cache."""
+        if env.cache_timestamp_newer:
+            return env.fs.copy(src, dst)
+        else:
+            return env.fs.copy2(src, dst)
+
+    @classmethod
+    def copy_to_cache(cls, env, src, dst) -> str:
+        """Copy a file to cache.
+
+        Just use the FS copy2 ("with metadata") method, except do an additional
+        check and if necessary a chmod to ensure the cachefile is writeable,
+        to forestall permission problems if the cache entry is later updated.
+        """
+        try:
+            result = env.fs.copy2(src, dst)
+            st = stat.S_IMODE(os.stat(result).st_mode)
+            if not st | stat.S_IWRITE:
+                os.chmod(dst, st | stat.S_IWRITE)
+            return result
+        except AttributeError as ex:
+            raise EnvironmentError from ex
+
     @property
-    def hit_ratio(self):
+    def hit_ratio(self) -> float:
         return (100.0 * self.hits / self.requests if self.requests > 0 else 100)
 
     @property
-    def misses(self):
+    def misses(self) -> int:
         return self.requests - self.hits
 
-    def is_enabled(self):
+    def is_enabled(self) -> bool:
         return cache_enabled and self.path is not None
 
-    def is_readonly(self):
+    def is_readonly(self) -> bool:
         return cache_readonly
 
-    def cachepath(self, node):
-        """
+    def get_cachedir_csig(self, node):
+        cachedir, cachefile = self.cachepath(node)
+        if cachefile and os.path.exists(cachefile):
+            return SCons.Util.hash_file_signature(cachefile, SCons.Node.FS.File.hash_chunksize)
+
+    def cachepath(self, node) -> tuple:
+        """Return where to cache a file.
+
+        Given a Node, obtain the configured cache directory and
+        the path to the cached file, which is generated from the
+        node's build signature. If caching is not enabled for the
+        None, return a tuple of None.
         """
         if not self.is_enabled():
             return None, None
 
         sig = node.get_cachedir_bsig()
-
         subdir = sig[:self.config['prefix_len']].upper()
-
-        dir = os.path.join(self.path, subdir)
-        return dir, os.path.join(dir, sig)
+        cachedir = os.path.join(self.path, subdir)
+        return cachedir, os.path.join(cachedir, sig)
 
     def retrieve(self, node):
         """

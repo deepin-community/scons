@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,16 +20,12 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import SCons.compat
 
 import collections
 import unittest
 import os
 
+import SCons.compat
 import SCons.Errors
 import SCons.Platform
 import SCons.Environment
@@ -53,6 +50,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '.exe', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'cygwin', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('os2')
         assert str(p) == 'os2', p
@@ -60,6 +59,8 @@ class PlatformTestCase(unittest.TestCase):
         p(env)
         assert env['PROGSUFFIX'] == '.exe', env
         assert env['LIBSUFFIX'] == '.lib', env
+        assert env['HOST_OS'] == 'os2', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('posix')
         assert str(p) == 'posix', p
@@ -68,6 +69,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'posix', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('irix')
         assert str(p) == 'irix', p
@@ -76,6 +79,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'irix', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('aix')
         assert str(p) == 'aix', p
@@ -84,6 +89,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'aix', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('sunos')
         assert str(p) == 'sunos', p
@@ -92,6 +99,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'sunos', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('hpux')
         assert str(p) == 'hpux', p
@@ -100,6 +109,8 @@ class PlatformTestCase(unittest.TestCase):
         assert env['PROGSUFFIX'] == '', env
         assert env['LIBSUFFIX'] == '.a', env
         assert env['SHELL'] == 'sh', env
+        assert env['HOST_OS'] == 'hpux', env
+        assert env['HOST_ARCH'] != '', env
 
         p = SCons.Platform.Platform('win32')
         assert str(p) == 'win32', p
@@ -107,18 +118,45 @@ class PlatformTestCase(unittest.TestCase):
         p(env)
         assert env['PROGSUFFIX'] == '.exe', env
         assert env['LIBSUFFIX'] == '.lib', env
-        assert str
+        assert env['HOST_OS'] == 'win32', env
+        assert env['HOST_ARCH'] != '', env
 
+        exc_caught = None
         try:
             p = SCons.Platform.Platform('_does_not_exist_')
         except SCons.Errors.UserError:
-            pass
-        else:   # TODO pylint E0704: bare raise not inside except
-            raise
+            exc_caught = 1
+        assert exc_caught, "did not catch expected UserError"
 
         env = Environment()
         SCons.Platform.Platform()(env)
         assert env != {}, env
+
+    def test_win32_no_arch_shell_variables(self):
+        """
+        Test that a usable HOST_ARCH is available when
+        neither: PROCESSOR_ARCHITEW6432 nor PROCESSOR_ARCHITECTURE
+        is set for SCons.Platform.win32.get_architecture()
+        """
+
+        # Save values if defined
+        PA_6432 = os.environ.get('PROCESSOR_ARCHITEW6432')
+        PA = os.environ.get('PROCESSOR_ARCHITECTURE')
+        if PA_6432:
+            del(os.environ['PROCESSOR_ARCHITEW6432'])
+        if PA:
+            del(os.environ['PROCESSOR_ARCHITECTURE'])
+
+        p = SCons.Platform.win32.get_architecture()
+
+        # restore values
+        if PA_6432:
+            os.environ['PROCESSOR_ARCHITEW6432']=PA_6432
+        if PA:
+            os.environ['PROCESSOR_ARCHITECTURE']=PA
+
+        assert p.arch != '', 'SCons.Platform.win32.get_architecture() not setting arch'
+        assert p.synonyms != '', 'SCons.Platform.win32.get_architecture() not setting synonyms'
 
 
 class TempFileMungeTestCase(unittest.TestCase):
@@ -159,7 +197,7 @@ class TempFileMungeTestCase(unittest.TestCase):
         assert cmd != defined_cmd, cmd
 
     def test_TEMPFILEARGJOINBYTE(self):
-        """ 
+        """
         Test argument join byte TEMPFILEARGJOINBYTE
         """
 
@@ -193,14 +231,45 @@ class TempFileMungeTestCase(unittest.TestCase):
         SCons.Action.print_actions = old_actions
         assert file_content != env['TEMPFILEARGJOINBYTE'].join(['test','command','line'])
 
+    def test_TEMPFILEARGESCFUNC(self):
+        """
+        Test a custom TEMPFILEARGESCFUNC
+        """
+
+        def _tempfile_arg_esc_func(arg):
+            return str(arg).replace("line", "newarg")
+
+        defined_cmd = "a $VERY $OVERSIMPLIFIED line"
+        t = SCons.Platform.TempFileMunge(defined_cmd)
+        env = SCons.Environment.SubstitutionEnvironment(tools=[])
+        # Setting the line length high enough...
+        env['MAXLINELENGTH'] = 5
+        env['VERY'] = 'test'
+        env['OVERSIMPLIFIED'] = 'command'
+
+        # For tempfilemunge to operate.
+        old_actions = SCons.Action.print_actions
+        SCons.Action.print_actions = 0
+        env['TEMPFILEARGESCFUNC'] = _tempfile_arg_esc_func
+        cmd = t(None, None, env, 0)
+        # print("CMD is: %s"%cmd)
+
+        with open(cmd[-1], 'rb') as f:
+            file_content = f.read()
+        # print("Content is:[%s]"%file_content)
+        # # ...and restoring its setting.
+        SCons.Action.print_actions = old_actions
+        assert b"newarg" in file_content
 
     def test_tempfilecreation_once(self):
-        # Init class with cmd, such that the fully expanded
-        # string reads "a test command line".
-        # Note, how we're using a command string here that is
-        # actually longer than the substituted one. This is to ensure
-        # that the TempFileMunge class internally really takes the
-        # length of the expanded string into account.
+        """
+        Init class with cmd, such that the fully expanded
+        string reads "a test command line".
+        Note, how we're using a command string here that is
+        actually longer than the substituted one. This is to ensure
+        that the TempFileMunge class internally really takes the
+        length of the expanded string into account.
+        """
         defined_cmd = "a $VERY $OVERSIMPLIFIED line"
         t = SCons.Platform.TempFileMunge(defined_cmd)
         env = SCons.Environment.SubstitutionEnvironment(tools=[])
@@ -220,12 +289,14 @@ class TempFileMungeTestCase(unittest.TestCase):
 
             def __init__(self):
                 self.attributes = self.Attrs()
+
         target = [Node()]
         cmd = t(target, None, env, 0)
         # ...and restoring its setting.
         SCons.Action.print_actions = old_actions
         assert cmd != defined_cmd, cmd
-        assert cmd == getattr(target[0].attributes, 'tempfile_cmdlist', None)
+        assert cmd == target[0].attributes.tempfile_cmdlist[defined_cmd]
+
 
 
 class PlatformEscapeTestCase(unittest.TestCase):

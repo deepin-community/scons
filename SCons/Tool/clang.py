@@ -1,17 +1,6 @@
-# -*- coding: utf-8; -*-
-
-"""SCons.Tool.clang
-
-Tool-specific initialization for clang.
-
-There normally shouldn't be any need to import this module directly.
-It will usually be imported through the generic SCons.Tool.Tool()
-selection method.
-
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -31,9 +20,13 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-# __revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Tool-specific initialization for clang.
+
+There normally shouldn't be any need to import this module directly.
+It will usually be imported through the generic SCons.Tool.Tool()
+selection method.
+"""
 
 # Based on SCons/Tool/gcc.py by Paweł Tomulik 2014 as a separate tool.
 # Brought into the SCons mainline by Russel Winder 2017.
@@ -41,7 +34,6 @@ selection method.
 import os
 import re
 import subprocess
-import sys
 
 import SCons.Util
 import SCons.Tool.cc
@@ -50,6 +42,7 @@ from SCons.Tool.MSCommon import msvc_setup_env_once
 
 
 compilers = ['clang']
+
 
 def generate(env):
     """Add Builders and construction variables for clang to an Environment."""
@@ -66,7 +59,6 @@ def generate(env):
             # Set-up ms tools paths
             msvc_setup_env_once(env)
 
-
     env['CC'] = env.Detect(compilers) or 'clang'
     if env['PLATFORM'] in ['cygwin', 'win32']:
         env['SHCCFLAGS'] = SCons.Util.CLVar('$CCFLAGS')
@@ -75,7 +67,7 @@ def generate(env):
 
     # determine compiler version
     if env['CC']:
-        #pipe = SCons.Action._subproc(env, [env['CC'], '-dumpversion'],
+        # pipe = SCons.Action._subproc(env, [env['CC'], '-dumpversion'],
         pipe = SCons.Action._subproc(env, [env['CC'], '--version'],
                                      stdin='devnull',
                                      stderr='devnull',
@@ -84,11 +76,14 @@ def generate(env):
         # clang -dumpversion is of no use
         with pipe.stdout:
             line = pipe.stdout.readline()
-        if sys.version_info[0] > 2:
-            line = line.decode()
+        line = line.decode()
         match = re.search(r'clang +version +([0-9]+(?:\.[0-9]+)+)', line)
         if match:
             env['CCVERSION'] = match.group(1)
+
+    env['CCDEPFLAGS'] = '-MMD -MF ${TARGET}.d'
+    env["NINJA_DEPFILE_PARSE_FORMAT"] = 'clang'
+
 
 def exists(env):
     return env.Detect(compilers)

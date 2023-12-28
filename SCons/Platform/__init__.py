@@ -1,26 +1,6 @@
-"""SCons.Platform
-
-SCons platform selection.
-
-This looks for modules that define a callable object that can modify a
-construction environment as appropriate for a given platform.
-
-Note that we take a more simplistic view of "platform" than Python does.
-We're looking for a single string that determines a set of
-tool-independent variables with which to initialize a construction
-environment.  Consequently, we'll examine both sys.platform and os.name
-(and anything else that might come in to play) in order to return some
-specification which is unique enough for our purposes.
-
-Note that because this subsystem just *selects* a callable that can
-modify a construction environment, it's possible for people to define
-their own "platform specification" in an arbitrary callable function.
-No one needs to use or tie in to this subsystem in order to roll
-their own platform definition.
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -40,8 +20,25 @@ their own platform definition.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+
+"""SCons platform selection.
+
+Looks for modules that define a callable object that can modify a
+construction environment as appropriate for a given platform.
+
+Note that we take a more simplistic view of "platform" than Python does.
+We're looking for a single string that determines a set of
+tool-independent variables with which to initialize a construction
+environment.  Consequently, we'll examine both sys.platform and os.name
+(and anything else that might come in to play) in order to return some
+specification which is unique enough for our purposes.
+
+Note that because this subsystem just *selects* a callable that can
+modify a construction environment, it's possible for people to define
+their own "platform specification" in an arbitrary callable function.
+No one needs to use or tie in to this subsystem in order to roll
+their own platform definition.
+"""
 
 import SCons.compat
 
@@ -56,7 +53,7 @@ import SCons.Tool
 
 
 def platform_default():
-    """Return the platform string for our execution environment.
+    r"""Return the platform string for our execution environment.
 
     The returned value should map to one of the SCons/Platform/\*.py
     files.  Since scons is architecture independent, though, we don't
@@ -86,7 +83,7 @@ def platform_default():
         return sys.platform
 
 
-def platform_module(name = platform_default()):
+def platform_module(name=platform_default()):
     """Return the imported module for the platform.
 
     This looks for a module name that matches the specified argument.
@@ -94,27 +91,41 @@ def platform_module(name = platform_default()):
     our execution environment.
     """
     full_name = 'SCons.Platform.' + name
-    if full_name not in sys.modules:
-        if os.name == 'java':
-            eval(full_name)
-        else:
+    try:
+        return sys.modules[full_name]
+    except KeyError:
+        try:
+            # the specific platform module is a relative import
+            mod = importlib.import_module("." + name, __name__)
+        except ModuleNotFoundError:
             try:
-                # the specific platform module is a relative import
-                mod = importlib.import_module("." + name, __name__)
-            except ImportError:
-                try:
-                    import zipimport
-                    importer = zipimport.zipimporter( sys.modules['SCons.Platform'].__path__[0] )
+                # This support was added to enable running inside
+                # a py2exe bundle a long time ago - unclear if it's
+                # still needed. It is *not* intended to load individual
+                # platform modules stored in a zipfile.
+                import zipimport
+
+                platform = sys.modules['SCons.Platform'].__path__[0]
+                importer = zipimport.zipimporter(platform)
+                if not hasattr(importer, 'find_spec'):
+                    # zipimport only added find_spec, exec_module in 3.10,
+                    # unlike importlib, where they've been around since 3.4.
+                    # If we don't have 'em, use the old way.
                     mod = importer.load_module(full_name)
-                except ImportError:
-                    raise SCons.Errors.UserError("No platform named '%s'" % name)
-            setattr(SCons.Platform, name, mod)
-    return sys.modules[full_name]
+                else:
+                    spec = importer.find_spec(full_name)
+                    mod = importlib.util.module_from_spec(spec)
+                    importer.exec_module(mod)
+                sys.modules[full_name] = mod
+            except zipimport.ZipImportError:
+                raise SCons.Errors.UserError("No platform named '%s'" % name)
+
+        setattr(SCons.Platform, name, mod)
+        return mod
 
 
 def DefaultToolList(platform, env):
-    """Select a default tool list for the specified platform.
-    """
+    """Select a default tool list for the specified platform."""
     return SCons.Tool.tool_list(platform, env)
 
 
@@ -133,7 +144,7 @@ class PlatformSpec:
 class TempFileMunge:
     """Convert long command lines to use a temporary file.
 
-    You can set an Environment variable (usually `TEMPFILE`) to this,
+    You can set an Environment variable (usually ``TEMPFILE``) to this,
     then call it with a string argument, and it will perform temporary
     file substitution on it.  This is used to circumvent limitations on
     the length of command lines. Example::
@@ -143,20 +154,42 @@ class TempFileMunge:
 
     By default, the name of the temporary file used begins with a
     prefix of '@'.  This may be configured for other tool chains by
-    setting the TEMPFILEPREFIX variable. Example::
+    setting the ``TEMPFILEPREFIX`` variable. Example::
 
         env["TEMPFILEPREFIX"] = '-@'        # diab compiler
         env["TEMPFILEPREFIX"] = '-via'      # arm tool chain
         env["TEMPFILEPREFIX"] = ''          # (the empty string) PC Lint
 
     You can configure the extension of the temporary file through the
-    TEMPFILESUFFIX variable, which defaults to '.lnk' (see comments
+    ``TEMPFILESUFFIX`` variable, which defaults to '.lnk' (see comments
     in the code below). Example::
 
         env["TEMPFILESUFFIX"] = '.lnt'   # PC Lint
 
     Entries in the temporary file are separated by the value of the
-    TEMPFILEARGJOIN variable, which defaults to an OS-appropriate value.
+    ``TEMPFILEARGJOIN`` variable, which defaults to an OS-appropriate value.
+
+    A default argument escape function is ``SCons.Subst.quote_spaces``.
+    If you need to apply extra operations on a command argument before
+    writing to a temporary file(fix Windows slashes, normalize paths, etc.),
+    please set `TEMPFILEARGESCFUNC` variable to a custom function. Example::
+
+        import sys
+        import re
+        from SCons.Subst import quote_spaces
+
+        WINPATHSEP_RE = re.compile(r"\\([^\"'\\]|$)")
+
+
+        def tempfile_arg_esc_func(arg):
+            arg = quote_spaces(arg)
+            if sys.platform != "win32":
+                return arg
+            # GCC requires double Windows slashes, let's use UNIX separator
+            return WINPATHSEP_RE.sub(r"/\1", arg)
+
+
+        env["TEMPFILEARGESCFUNC"] = tempfile_arg_esc_func
 
     """
     def __init__(self, cmd, cmdstr = None):
@@ -191,9 +224,20 @@ class TempFileMunge:
 
         # Check if we already created the temporary file for this target
         # It should have been previously done by Action.strfunction() call
-        node = target[0] if SCons.Util.is_List(target) else target
-        cmdlist = getattr(node.attributes, 'tempfile_cmdlist', None) \
-                    if node is not None else None
+        if SCons.Util.is_List(target):
+            node = target[0]
+        else:
+            node = target
+
+        cmdlist = None
+
+        if SCons.Util.is_List(self.cmd):
+            cmdlist_key = tuple(self.cmd)
+        else:
+            cmdlist_key = self.cmd
+
+        if node and hasattr(node.attributes, 'tempfile_cmdlist'):
+            cmdlist = node.attributes.tempfile_cmdlist.get(cmdlist_key, None)
         if cmdlist is not None:
             return cmdlist
 
@@ -227,13 +271,18 @@ class TempFileMunge:
             # Windows path names.
             rm = 'del'
 
-        prefix = env.subst('$TEMPFILEPREFIX')
-        if not prefix:
+        if 'TEMPFILEPREFIX' in env:
+            prefix = env.subst('$TEMPFILEPREFIX')
+        else:
             prefix = '@'
 
-        args = list(map(SCons.Subst.quote_spaces, cmd[1:]))
-        join_char = env.get('TEMPFILEARGJOIN',' ')
-        os.write(fd, bytearray(join_char.join(args) + "\n",'utf-8'))
+        tempfile_esc_func = env.get('TEMPFILEARGESCFUNC', SCons.Subst.quote_spaces)
+        args = [
+            tempfile_esc_func(arg)
+            for arg in cmd[1:]
+        ]
+        join_char = env.get('TEMPFILEARGJOIN', ' ')
+        os.write(fd, bytearray(join_char.join(args) + "\n", 'utf-8'))
         os.close(fd)
 
         # XXX Using the SCons.Action.print_actions value directly
@@ -260,14 +309,18 @@ class TempFileMunge:
                     str(cmd[0]) + " " + " ".join(args))
                 self._print_cmd_str(target, source, env, cmdstr)
 
+        cmdlist = [cmd[0], prefix + native_tmp + '\n' + rm, native_tmp]
+
         # Store the temporary file command list into the target Node.attributes
         # to avoid creating two temporary files one for print and one for execute.
-        cmdlist = [ cmd[0], prefix + native_tmp + '\n' + rm, native_tmp ]
         if node is not None:
-            try :
-                setattr(node.attributes, 'tempfile_cmdlist', cmdlist)
+            try:
+                # Storing in tempfile_cmdlist by self.cmd provided when intializing
+                # $TEMPFILE{} fixes issue raised in PR #3140 and #3553
+                node.attributes.tempfile_cmdlist[cmdlist_key] = cmdlist
             except AttributeError:
-                pass
+                node.attributes.tempfile_cmdlist = {cmdlist_key: cmdlist}
+
         return cmdlist
 
     def _print_cmd_str(self, target, source, env, cmdstr):
@@ -289,8 +342,8 @@ class TempFileMunge:
 
 
 def Platform(name = platform_default()):
-    """Select a canned Platform specification.
-    """
+    """Select a canned Platform specification."""
+
     module = platform_module(name)
     spec = PlatformSpec(name, module.generate)
     return spec

@@ -13,7 +13,6 @@ build-install.xml
 caching.xml
 command-line.xml
 cons.pl
-copyright.xml
 depends.xml
 environments.xml
 errors.xml
@@ -36,6 +35,7 @@ nodes.xml
 output.xml
 parseconfig.xml
 parseflags.xml
+parse_flags_arg.xml
 preface.xml
 python.xml
 repositories.xml
@@ -43,6 +43,7 @@ run.xml
 scanners.xml
 sconf.xml
 separate.xml
+sideeffect.xml
 simple.xml
 tasks.xml
 tools.xml

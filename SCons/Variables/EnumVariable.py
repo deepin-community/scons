@@ -1,21 +1,6 @@
-"""SCons.Variables.EnumVariable
-
-This file defines the option type for SCons allowing only specified
-input-values.
-
-Usage example::
-
-    opts = Variables()
-    opts.Add(EnumVariable('debug', 'debug output and symbols', 'no',
-                      allowed_values=('yes', 'no', 'full'),
-                      map={}, ignorecase=2))
-    ...
-    if env['debug'] == 'full':
-    ...
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -35,51 +20,75 @@ Usage example::
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Variable type for enumeration Variables.
+
+Enumeration variables allow selection of one from a specified set of values.
+
+Usage example::
+
+    opts = Variables()
+    opts.Add(
+        EnumVariable(
+            'debug',
+            help='debug output and symbols',
+            default='no',
+            allowed_values=('yes', 'no', 'full'),
+            map={},
+            ignorecase=2,
+        )
+    )
+    ...
+    if env['debug'] == 'full':
+    ...
+"""
+
+from typing import Tuple, Callable
+
+import SCons.Errors
 
 __all__ = ['EnumVariable',]
 
 
-import SCons.Errors
-
-def _validator(key, val, env, vals):
+def _validator(key, val, env, vals) -> None:
     if val not in vals:
         raise SCons.Errors.UserError(
             'Invalid value for option %s: %s.  Valid values are: %s' % (key, val, vals))
 
 
-def EnumVariable(key, help, default, allowed_values, map={}, ignorecase=0):
-    """
+def EnumVariable(key, help, default, allowed_values, map={}, ignorecase=0) -> Tuple[str, str, str, Callable, Callable]:
+    """Return a tuple describing an enumaration SCons Variable.
+
     The input parameters describe an option with only certain values
-    allowed. They are returned with an appropriate converter and
-    validator appended. The result is usable for input to
-    Variables.Add().
+    allowed. Returns A tuple including an appropriate converter and
+    validator. The result is usable as input to :meth:`Add`.
 
-    'key' and 'default' are the values to be passed on to Variables.Add().
+    *key* and *default* are passed directly on to :meth:`Add`.
 
-    'help' will be appended by the allowed values automatically
+    *help* is the descriptive part of the help text,
+    and will have the allowed values automatically appended.
 
-    'allowed_values' is a list of strings, which are allowed as values
+    *allowed_values* is a list of strings, which are the allowed values
     for this option.
 
-    The 'map'-dictionary may be used for converting the input value
+    The *map*-dictionary may be used for converting the input value
     into canonical values (e.g. for aliases).
 
-    'ignorecase' defines the behaviour of the validator:
+    The value of *ignorecase* defines the behaviour of the validator:
 
-        If ignorecase == 0, the validator/converter are case-sensitive.
-        If ignorecase == 1, the validator/converter are case-insensitive.
-        If ignorecase == 2, the validator/converter is case-insensitive and the converted value will always be lower-case.
+        * 0: the validator/converter are case-sensitive.
+        * 1: the validator/converter are case-insensitive.
+        * 2: the validator/converter is case-insensitive and the
+          converted value will always be lower-case.
 
-    The 'validator' tests whether the value is in the list of allowed values. The 'converter' converts input values
-    according to the given 'map'-dictionary (unmapped input values are returned unchanged).
+    The *validator* tests whether the value is in the list of allowed values.
+    The *converter* converts input values according to the given
+    *map*-dictionary (unmapped input values are returned unchanged).
     """
 
     help = '%s (%s)' % (help, '|'.join(allowed_values))
     # define validator
-    if ignorecase >= 1:
+    if ignorecase:
         validator = lambda key, val, env: \
                     _validator(key, val.lower(), env, allowed_values)
     else:

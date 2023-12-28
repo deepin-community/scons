@@ -1,14 +1,6 @@
-"""SCons.Platform.posix
-
-Platform-specific initialization for POSIX (Linux, UNIX, etc.) systems.
-
-There normally shouldn't be any need to import this module directly.  It
-will usually be imported through the generic SCons.Platform.Platform()
-selection method.
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -28,18 +20,17 @@ selection method.
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Platform-specific initialization for POSIX (Linux, UNIX, etc.) systems.
 
-import errno
-import os
-import os.path
+There normally shouldn't be any need to import this module directly.  It
+will usually be imported through the generic SCons.Platform.Platform()
+selection method.
+"""
+
+import platform
 import subprocess
-import sys
-import select
 
-import SCons.Util
 from SCons.Platform import TempFileMunge
 from SCons.Platform.virtualenv import ImportVirtualenv
 from SCons.Platform.virtualenv import ignore_virtualenv, enable_virtualenv
@@ -91,7 +82,7 @@ def generate(env):
 
     if 'ENV' not in env:
         env['ENV']        = {}
-    env['ENV']['PATH']    = '/usr/local/bin:/opt/bin:/bin:/usr/bin'
+    env['ENV']['PATH']    = '/usr/local/bin:/opt/bin:/bin:/usr/bin:/snap/bin'
     env['OBJPREFIX']      = ''
     env['OBJSUFFIX']      = '.o'
     env['SHOBJPREFIX']    = '$OBJPREFIX'
@@ -104,6 +95,8 @@ def generate(env):
     env['SHLIBSUFFIX']    = '.so'
     env['LIBPREFIXES']    = [ '$LIBPREFIX' ]
     env['LIBSUFFIXES']    = [ '$LIBSUFFIX', '$SHLIBSUFFIX' ]
+    env['HOST_OS']        = 'posix'
+    env['HOST_ARCH']      = platform.machine()
     env['PSPAWN']         = pspawn
     env['SPAWN']          = spawn
     env['SHELL']          = 'sh'

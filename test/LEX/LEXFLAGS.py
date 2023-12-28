@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 #
-# __COPYRIGHT__
+# MIT License
+#
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -20,14 +22,12 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import os
 import sys
+import sysconfig
 
 import TestSCons
+from TestCmd import IS_WINDOWS
 
 _python_ = TestSCons._python_
 _exe   = TestSCons._exe
@@ -36,48 +36,28 @@ test = TestSCons.TestSCons()
 
 test.subdir('in')
 
-test.write('mylex.py', """
-import getopt
-import sys
-import os
-if sys.platform == 'win32':
-    longopts = ['nounistd']
-else:
-    longopts = []
-cmd_opts, args = getopt.getopt(sys.argv[1:], 'I:tx', longopts)
-opt_string = ''
-i_arguments = ''
-for opt, arg in cmd_opts:
-    if opt == '-I': i_arguments = i_arguments + ' ' + arg
-    else: opt_string = opt_string + ' ' + opt
-for a in args:
-    with open(a, 'r') as f:
-        contents = f.read()
-    contents = contents.replace('LEXFLAGS', opt_string)
-    contents = contents.replace('I_ARGS', i_arguments)
-    sys.stdout.write(contents)
-sys.exit(0)
-""")
+test.file_fixture('mylex.py')
 
-test.write('SConstruct', """
-env = Environment(LEX = r'%(_python_)s mylex.py',
-                  LEXFLAGS = '-x -I${TARGET.dir} -I${SOURCE.dir}',
-                  tools=['default', 'lex'])
-env.CFile(target = 'out/aaa', source = 'in/aaa.l')
+test.write('SConstruct', """\
+DefaultEnvironment(tools=[])
+env = Environment(
+    LEX=r'%(_python_)s mylex.py',
+    LEXFLAGS='-x -I${TARGET.dir} -I${SOURCE.dir}',
+    tools=['default', 'lex'],
+)
+env.CFile(target='out/aaa', source='in/aaa.l')
 """ % locals())
 
 test.write(['in', 'aaa.l'], "aaa.l\nLEXFLAGS\nI_ARGS\n")
 
-test.run('.', stderr = None)
+test.run('.', stderr=None)
 
 lexflags = ' -x -t'
-if sys.platform == 'win32':
+if IS_WINDOWS and not sysconfig.get_platform() in ("mingw",):
     lexflags = ' --nounistd' + lexflags
-# Read in with mode='r' because mylex.py implicitley wrote to stdout
+# Read in with mode='r' because mylex.py implicitly wrote to stdout
 # with mode='w'.
-test.must_match(['out', 'aaa.c'],	"aaa.l\n%s\n out in\n" % lexflags, mode='r')
-
-
+test.must_match(['out', 'aaa.c'], "aaa.l\n%s\n out in\n" % lexflags, mode='r')
 
 test.pass_test()
 

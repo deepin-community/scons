@@ -1,7 +1,5 @@
 # docbook.py: extension module
 # $Id: docbook.py 8353 2009-03-17 16:57:50Z mzjn $
-import sys
-import string
 import libxml2
 import libxslt
 import re
@@ -159,7 +157,7 @@ def convertLength(length):
     global pixelsPerInch
     global unitHash
 
-    m = re.search('([+-]?[\d.]+)(\S+)', length)
+    m = re.search(r'([+-]?[\d.]+)(\S+)', length)
     if m is not None and m.lastindex > 1:
         unit = pixelsPerInch
         if m.group(2) in unitHash:
@@ -206,11 +204,11 @@ def lookupVariable(tctxt, varName, default):
         return default
 
     # If it's a list, get the first element
-    if type(varString) == type([]):
+    if isinstance(varString, list):
         varString = varString[0]
 
     # If it's not a string, it must be a node, get its content
-    if type(varString) != type(""):
+    if not isinstance(varString, str):
         varString = varString.content
 
     return varString

@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,12 +20,8 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os.path
-import sys
 import unittest
 
 import SCons.Errors
@@ -99,8 +96,8 @@ class PathVariableTestCase(unittest.TestCase):
             o.validator('X', dne, {})
         except SCons.Errors.UserError as e:
             assert str(e) == 'Directory path for option X does not exist: %s' % dne, e
-        except:
-            raise Exception("did not catch expected UserError")
+        except Exception as e:
+            raise Exception("did not catch expected UserError") from e
 
     def test_PathIsDirCreate(self):
         """Test the PathIsDirCreate validator"""
@@ -124,8 +121,16 @@ class PathVariableTestCase(unittest.TestCase):
             o.validator('X', f, {})
         except SCons.Errors.UserError as e:
             assert str(e) == 'Path for option X is a file, not a directory: %s' % f, e
-        except:
-            raise Exception("did not catch expected UserError")
+        except Exception as e:
+            raise Exception("did not catch expected UserError") from e
+
+        f = '/yyy/zzz'  # this not exists and should fail to create
+        try:
+            o.validator('X', f, {})
+        except SCons.Errors.UserError as e:
+            assert str(e) == 'Path for option X could not be created: %s' % f, e
+        except Exception as e:
+            raise Exception("did not catch expected UserError") from e
 
     def test_PathIsFile(self):
         """Test the PathIsFile validator"""

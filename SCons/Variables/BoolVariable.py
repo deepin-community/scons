@@ -1,18 +1,6 @@
-"""SCons.Variables.BoolVariable
-
-This file defines the option type for SCons implementing true/false values.
-
-Usage example::
-
-    opts = Variables()
-    opts.Add(BoolVariable('embedded', 'build for an embedded system', 0))
-    ...
-    if env['embedded'] == 1:
-    ...
-"""
-
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -32,55 +20,76 @@ Usage example::
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
 
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
+"""Variable type for true/false Variables.
 
-__all__ = ['BoolVariable',]
+Usage example::
+
+    opts = Variables()
+    opts.Add(BoolVariable('embedded', 'build for an embedded system', False))
+    ...
+    if env['embedded']:
+        ...
+"""
+
+from typing import Tuple, Callable
 
 import SCons.Errors
 
-__true_strings  = ('y', 'yes', 'true', 't', '1', 'on' , 'all' )
-__false_strings = ('n', 'no', 'false', 'f', '0', 'off', 'none')
+__all__ = ['BoolVariable',]
+
+TRUE_STRINGS = ('y', 'yes', 'true', 't', '1', 'on' , 'all')
+FALSE_STRINGS = ('n', 'no', 'false', 'f', '0', 'off', 'none')
 
 
-def _text2bool(val):
+def _text2bool(val: str) -> bool:
+    """Convert boolean-like string to boolean.
+
+    If *val* looks like it expresses a bool-like value, based on
+    the :const:`TRUE_STRINGS` and :const:`FALSE_STRINGS` tuples,
+    return the appropriate value.
+
+    This is usable as a converter function for SCons Variables.
+
+    Raises:
+        ValueError: if *val* cannot be converted to boolean.
     """
-    Converts strings to True/False depending on the 'truth' expressed by
-    the string. If the string can't be converted, the original value
-    will be returned.
 
-    See '__true_strings' and '__false_strings' for values considered
-    'true' or 'false respectively.
-
-    This is usable as 'converter' for SCons' Variables.
-    """
     lval = val.lower()
-    if lval in __true_strings: return True
-    if lval in __false_strings: return False
+    if lval in TRUE_STRINGS:
+        return True
+    if lval in FALSE_STRINGS:
+        return False
     raise ValueError("Invalid value for boolean option: %s" % val)
 
 
-def _validator(key, val, env):
-    """
-    Validates the given value to be either '0' or '1'.
-    
-    This is usable as 'validator' for SCons' Variables.
+def _validator(key, val, env) -> None:
+    """Validate that the value of *key* in *env* is a boolean.
+
+    Parmaeter *val* is not used in the check.
+
+    Usable as a validator function for SCons Variables.
+
+    Raises:
+        KeyError: if *key* is not set in *env*
+        UserError: if the value of *key* is not ``True`` or ``False``.
     """
     if not env[key] in (True, False):
         raise SCons.Errors.UserError(
-            'Invalid value for boolean option %s: %s' % (key, env[key]))
+            'Invalid value for boolean option %s: %s' % (key, env[key])
+        )
 
 
-def BoolVariable(key, help, default):
+def BoolVariable(key, help, default) -> Tuple[str, str, str, Callable, Callable]:
+    """Return a tuple describing a boolean SCons Variable.
+
+    The input parameters describe a boolean option. Returns a tuple
+    including the correct converter and validator.
+    The *help* text will have ``(yes|no)`` automatically appended to show the
+    valid values. The result is usable as input to :meth:`Add`.
     """
-    The input parameters describe a boolean option, thus they are
-    returned with the correct converter and validator appended. The
-    'help' text will by appended by '(yes|no) to show the valid
-    valued. The result is usable for input to opts.Add().
-    """
-    return (key, '%s (yes|no)' % help, default,
-            _validator, _text2bool)
+    help = '%s (yes|no)' % help
+    return (key, help, default, _validator, _text2bool)
 
 # Local Variables:
 # tab-width:4

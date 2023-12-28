@@ -23,14 +23,14 @@ Copyright: 2002      Moshe Zadka <moshez@debian.org>
            2003-2008 Mark Brown <broonie@debian.org>
            2008-2014 Luca Falavigna <dktrkranz@ubuntu.com>
            2014-2020 Jörg Frings-Fürst <debian@jff.email>
-	   2020      Ben Hutchings <benh@debian.org>
-           2018-2020 Laszlo Boszormenyi (GCS) <gcs@debian.org>
+           2020      Ben Hutchings <benh@debian.org>
+           2018-2023 Laszlo Boszormenyi (GCS) <gcs@debian.org>
 License: GPL-3.0+
 
 Files: debian/patches/*
 Copyright: 2010-2014 Luca Falavigna <dktrkranz@ubuntu.com>
            2014-2019 Jörg Frings-Fürst <debian@jff.email>
-	   2020      Ben Hutchings <benh@debian.org>
+           2020      Ben Hutchings <benh@debian.org>
 License: Expat
 
 License: Expat

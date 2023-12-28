@@ -48,8 +48,10 @@ Execution Requirements
 ======================
 
 Running SCons requires Python 3.5 or higher. There should be no other
-dependencies or requirements to run scons, although the pywin32 Python
-package is strongly recommended if running on Windows systems.
+dependencies or requirements to run scons.
+
+As of SCons 4.2.0 support for Python 3.5 is deprecated and will be removed
+with the next major release.
 
 The default SCons configuration assumes use of the Microsoft Visual C++
 compiler suite on Win32 systems, and assumes a C compiler named 'cc', a C++
@@ -134,7 +136,7 @@ By default, the above commands will do the following:
 - Install scripts named "scons" and "sconsign" scripts in the default system
   script directory (/usr/bin or C:\\Python\*\\Scripts, for example).
 
-- Install "scons-3.1.2.exe" and "scons.exe" executables in the Python
+- Install "scons-4.5.1.exe" and "scons.exe" executables in the Python
   prefix directory on Windows (C:\\Python\*, for example).
 
 - Install the SCons build engine (a Python module) in the standard Python library directory
@@ -376,7 +378,7 @@ running all of "runtest.py -a".
 Building Packages
 =================
 
-We use SCons (version 3.1.2 or later) to build its own packages.  If you
+We use SCons to build its own packages.  If you
 already have an appropriate version of SCons installed on your system, you can
 build everything by simply running it::
 
@@ -391,12 +393,12 @@ about `Executing SCons Without Installing`_)::
 Depending on the utilities installed on your system, any or all of the
 following packages will be built::
 
-    SCons-4.0.0-py3-none-any.whl
-    SCons-4.1.0.devyyyymmdd.tar.gz
-    SCons-4.1.0.devyyyymmdd.zip
-    scons-doc-4.1.0.devyyyymmdd.tar.gz
-    scons-local-4.1.0.devyyyymmdd.tar.gz
-    scons-local-4.1.0.devyyyymmdd.zip
+    SCons-4.5.1-py3-none-any.whl
+    SCons-4.7.0ayyyymmdd.tar.gz
+    SCons-4.7.0ayyyymmdd.zip
+    scons-doc-4.7.0ayyyymmdd.tar.gz
+    scons-local-4.7.0ayyyymmdd.tar.gz
+    scons-local-4.7.0ayyyymmdd.zip
 
 The SConstruct file is supposed to be smart enough to avoid trying to build
 packages for which you don't have the proper utilities installed.
@@ -610,5 +612,5 @@ many contributors, including but not at all limited to:
 
 \... and many others.
 
-Copyright (c) 2001 - 2020 The SCons Foundation
+Copyright (c) 2001 - 2023 The SCons Foundation
 

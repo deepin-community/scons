@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,18 +20,15 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
 
 import os.path
-import sys
 import unittest
 
 import TestCmd
 
 import SCons.Node.FS
 import SCons.Scanner.Dir
+from SCons.SConsign import current_sconsign_filename
 
 #class DummyNode:
 #    def __init__(self, name, fs):
@@ -60,23 +58,25 @@ class DirScannerTestBase(unittest.TestCase):
 
         self.test.subdir('dir', ['dir', 'sub'])
 
+        sconsign = current_sconsign_filename()
+
         self.test.write(['dir', 'f1'], "dir/f1\n")
         self.test.write(['dir', 'f2'], "dir/f2\n")
-        self.test.write(['dir', '.sconsign'], "dir/.sconsign\n")
-        self.test.write(['dir', '.sconsign.bak'], "dir/.sconsign.bak\n")
-        self.test.write(['dir', '.sconsign.dat'], "dir/.sconsign.dat\n")
-        self.test.write(['dir', '.sconsign.db'], "dir/.sconsign.db\n")
-        self.test.write(['dir', '.sconsign.dblite'], "dir/.sconsign.dblite\n")
-        self.test.write(['dir', '.sconsign.dir'], "dir/.sconsign.dir\n")
-        self.test.write(['dir', '.sconsign.pag'], "dir/.sconsign.pag\n")
+        self.test.write(['dir', '{}'.format(sconsign)], "dir/{}\n".format(sconsign))
+        self.test.write(['dir', '{}.bak'.format(sconsign)], "dir/{}.bak\n".format(sconsign))
+        self.test.write(['dir', '{}.dat'.format(sconsign)], "dir/{}.dat\n".format(sconsign))
+        self.test.write(['dir', '{}.db'.format(sconsign)], "dir/{}.db\n".format(sconsign))
+        self.test.write(['dir', '{}.dblite'.format(sconsign)], "dir/{}.dblite\n".format(sconsign))
+        self.test.write(['dir', '{}.dir'.format(sconsign)], "dir/{}.dir\n".format(sconsign))
+        self.test.write(['dir', '{}.pag'.format(sconsign)], "dir/{}.pag\n".format(sconsign))
         self.test.write(['dir', 'sub', 'f3'], "dir/sub/f3\n")
         self.test.write(['dir', 'sub', 'f4'], "dir/sub/f4\n")
-        self.test.write(['dir', 'sub', '.sconsign'], "dir/.sconsign\n")
-        self.test.write(['dir', 'sub', '.sconsign.bak'], "dir/.sconsign.bak\n")
-        self.test.write(['dir', 'sub', '.sconsign.dat'], "dir/.sconsign.dat\n")
-        self.test.write(['dir', 'sub', '.sconsign.dblite'], "dir/.sconsign.dblite\n")
-        self.test.write(['dir', 'sub', '.sconsign.dir'], "dir/.sconsign.dir\n")
-        self.test.write(['dir', 'sub', '.sconsign.pag'], "dir/.sconsign.pag\n")
+        self.test.write(['dir', 'sub', '{}'.format(sconsign)], "dir/{}\n".format(sconsign))
+        self.test.write(['dir', 'sub', '{}.bak'.format(sconsign)], "dir/{}.bak\n".format(sconsign))
+        self.test.write(['dir', 'sub', '{}.dat'.format(sconsign)], "dir/{}.dat\n".format(sconsign))
+        self.test.write(['dir', 'sub', '{}.dblite'.format(sconsign)], "dir/{}.dblite\n".format(sconsign))
+        self.test.write(['dir', 'sub', '{}.dir'.format(sconsign)], "dir/{}.dir\n".format(sconsign))
+        self.test.write(['dir', 'sub', '{}.pag'.format(sconsign)], "dir/{}.pag\n".format(sconsign))
 
 class DirScannerTestCase(DirScannerTestBase):
     def runTest(self):
@@ -91,7 +91,7 @@ class DirScannerTestCase(DirScannerTestBase):
         ]
         deps = s(env.Dir('dir'), env, ())
         sss = list(map(str, deps))
-        assert sss == expect, sss
+        assert sss == expect, "Found {}, expected {}".format(sss, expect)
 
         expect = [
             os.path.join('dir', 'sub', 'f3'),
@@ -99,7 +99,7 @@ class DirScannerTestCase(DirScannerTestBase):
         ]
         deps = s(env.Dir('dir/sub'), env, ())
         sss = list(map(str, deps))
-        assert sss == expect, sss
+        assert sss == expect, "Found {}, expected {}".format(sss, expect)
 
 class DirEntryScannerTestCase(DirScannerTestBase):
     def runTest(self):
@@ -109,16 +109,16 @@ class DirEntryScannerTestCase(DirScannerTestBase):
 
         deps = s(env.Dir('dir'), env, ())
         sss = list(map(str, deps))
-        assert sss == [], sss
+        assert sss == [], "Found {}, expected {}".format(sss, [])
 
         deps = s(env.Dir('dir/sub'), env, ())
         sss = list(map(str, deps))
-        assert sss == [], sss
+        assert sss == [], "Found {}, expected {}".format(sss, [])
 
         # Make sure we don't blow up if handed a non-Dir node.
         deps = s(env.File('dir/f1'), env, ())
         sss = list(map(str, deps))
-        assert sss == [], sss
+        assert sss == [], "Found {}, expected {}".format(sss, [])
 
 if __name__ == "__main__":
     unittest.main()

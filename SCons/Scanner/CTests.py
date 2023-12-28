@@ -1,5 +1,6 @@
+# MIT License
 #
-# __COPYRIGHT__
+# Copyright The SCons Foundation
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -19,11 +20,6 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__revision__ = "__FILE__ __REVISION__ __DATE__ __DEVELOPER__"
-
-import SCons.compat
 
 import collections
 import os
@@ -32,6 +28,7 @@ import unittest
 import TestCmd
 import TestUnit
 
+import SCons.compat
 import SCons.Node.FS
 import SCons.Warnings
 
@@ -183,9 +180,9 @@ test.write("f5b.h", "\n")
 # define some helpers:
 
 class DummyEnvironment(collections.UserDict):
-    def __init__(self, **kw):
-        collections.UserDict.__init__(self)
-        self.data.update(kw)
+    def __init__(self, **kwargs):
+        super().__init__()
+        self.data.update(kwargs)
         self.fs = SCons.Node.FS.FS(test.workpath(''))
 
     def Dictionary(self, *args):
@@ -493,6 +490,17 @@ class CConditionalScannerTestCase3(unittest.TestCase):
         headers = ['d1/f1.h']
         deps_match(self, deps, headers)
 
+class dictify_CPPDEFINESTestCase(unittest.TestCase):
+    def runTest(self):
+        """Make sure single-item tuples convert correctly.
+
+        This is a regression test: AppendUnique turns sequences into
+        lists of tuples, and dictify could gack on these.
+        """
+        env = DummyEnvironment(CPPDEFINES=(("VALUED_DEFINE", 1), ("UNVALUED_DEFINE", )))
+        d = SCons.Scanner.C.dictify_CPPDEFINES(env)
+        expect = {'VALUED_DEFINE': 1, 'UNVALUED_DEFINE': None}
+        assert d == expect
 
 def suite():
     suite = unittest.TestSuite()
@@ -513,6 +521,7 @@ def suite():
     suite.addTest(CConditionalScannerTestCase1())
     suite.addTest(CConditionalScannerTestCase2())
     suite.addTest(CConditionalScannerTestCase3())
+    suite.addTest(dictify_CPPDEFINESTestCase())
     return suite
 
 if __name__ == "__main__":
